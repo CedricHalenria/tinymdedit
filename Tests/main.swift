@@ -163,6 +163,42 @@ check("longueur du document inchangée", clickable.length == (sample as NSString
 clickable.replaceCharacters(in: NSRange(location: emptyBox, length: 1), with: " ")
 check("second clic : case revidée", drawn(clickHighlighter, emptyBox) == Theme.uncheckedBox)
 
+print("\nEMPHASE À CHEVAL SUR DEUX LIGNES")
+// Cas réel rencontré dans le README du projet : en Markdown, un simple retour à
+// la ligne au milieu d'un paragraphe est une coupure douce, le gras le traverse.
+let wrapped = NSTextStorage(string: "Il y a **le fichier\n`.md`, et rien d'autre**. Fin.\n\n## Suite\n")
+let wrappedHighlighter = MarkdownHighlighter()
+wrapped.delegate = wrappedHighlighter
+wrappedHighlighter.rehighlight(wrapped)
+let wns = wrapped.string as NSString
+func wrappedFont(_ needle: String) -> NSFont {
+    wrapped.attributes(at: wns.range(of: needle).location, effectiveRange: nil)[.font] as! NSFont
+}
+let wrappedVisibility = MarkerVisibilityController()
+wrappedVisibility.update(markers: wrappedHighlighter.hiddenMarkers,
+                         substitutions: wrappedHighlighter.substitutions,
+                         enabled: wrappedHighlighter.markersAreComplete)
+wrappedVisibility.setSelection(NSRange(location: wns.range(of: "Fin.").location, length: 0))
+check("gras appliqué avant le retour à la ligne",
+      wrappedFont("le fichier").fontDescriptor.symbolicTraits.contains(.bold))
+check("gras appliqué après le retour à la ligne",
+      wrappedFont("et rien").fontDescriptor.symbolicTraits.contains(.bold))
+check("« ** » ouvrant masqué", wrappedVisibility.isHidden(wns.range(of: "**le").location))
+check("« ** » fermant masqué", wrappedVisibility.isHidden(wns.range(of: "**. Fin").location))
+check("texte après le gras non gras",
+      !wrappedFont("Fin.").fontDescriptor.symbolicTraits.contains(.bold))
+check("le titre suivant reste un titre", wrappedFont("## Suite").pointSize == 25)
+
+// Une ligne vide ferme le paragraphe : aucune emphase ne doit la traverser.
+let split = NSTextStorage(string: "Un **début\n\nune fin** ici\n")
+let splitHighlighter = MarkdownHighlighter()
+split.delegate = splitHighlighter
+splitHighlighter.rehighlight(split)
+let sns = split.string as NSString
+let splitFont = split.attributes(at: sns.range(of: "début").location,
+                                 effectiveRange: nil)[.font] as! NSFont
+check("ligne vide : pas de gras à travers", !splitFont.fontDescriptor.symbolicTraits.contains(.bold))
+
 print("\nCITATIONS ET COLONNE DE LECTURE")
 check("un bloc de citation relevé", hl.quoteBlocks.count == 1)
 check("bloc de citation à la bonne position",

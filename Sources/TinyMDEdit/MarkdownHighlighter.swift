@@ -76,11 +76,19 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
 
     // MARK: - Expressions régulières
 
-    private static func rx(_ pattern: String) -> NSRegularExpression {
+    private static func rx(
+        _ pattern: String,
+        _ options: NSRegularExpression.Options = []
+    ) -> NSRegularExpression {
         // Les motifs sont des constantes littérales : un échec ici est un bug de
         // développement, pas une erreur d'exécution possible.
-        try! NSRegularExpression(pattern: pattern, options: [])
+        try! NSRegularExpression(pattern: pattern, options: options)
     }
+
+    /// Les emphases traversent les retours à la ligne : en Markdown, un simple
+    /// saut de ligne au milieu d'un paragraphe est une coupure douce, et
+    /// `**deux\nlignes**` est bien du gras.
+    private static let acrossLines: NSRegularExpression.Options = [.dotMatchesLineSeparators]
 
     // Blocs (appliqués ligne par ligne)
     private static let headingRx = rx(#"^(#{1,6})([ \t]+)(.*)$"#)
@@ -92,10 +100,10 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
 
     // Fragments en ligne
     private static let codeSpanRx = rx(#"(`+)([^`\n]|[^`\n].*?[^`\n])\1"#)
-    private static let boldItalicRx = rx(#"(\*\*\*|___)(?=\S)(.+?)(?<=\S)\1"#)
-    private static let boldRx = rx(#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#)
-    private static let italicRx = rx(#"(?<![*_\w\\])([*_])(?=[^\s*_])(.+?)(?<=[^\s*_])\1(?![*_\w])"#)
-    private static let strikeRx = rx(#"(~~)(?=\S)(.+?)(?<=\S)\1"#)
+    private static let boldItalicRx = rx(#"(\*\*\*|___)(?=\S)(.+?)(?<=\S)\1"#, acrossLines)
+    private static let boldRx = rx(#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#, acrossLines)
+    private static let italicRx = rx(#"(?<![*_\w\\])([*_])(?=[^\s*_])(.+?)(?<=[^\s*_])\1(?![*_\w])"#, acrossLines)
+    private static let strikeRx = rx(#"(~~)(?=\S)(.+?)(?<=\S)\1"#, acrossLines)
     private static let linkRx = rx(#"(!?\[)([^\]\n]*)(\]\()([^)\s]*)([^)\n]*)(\))"#)
     private static let autoLinkRx = rx(#"(<)((?:https?|mailto):[^>\s]+)(>)"#)
 
@@ -163,13 +171,25 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         var (insideFence, language) = openFence(before: range.location, in: ns)
         var inBlockComment = false
 
-        // 3. Puis on style ligne par ligne.
+        // 3. Puis on style ligne par ligne. Les styles en ligne, eux, ne sont pas
+        //    appliqués tout de suite : on accumule le contenu des lignes d'un même
+        //    paragraphe pour que gras, italique et liens puissent traverser les
+        //    retours à la ligne.
+        var pendingInline: NSRange?
+
+        func flushInline() {
+            defer { pendingInline = nil }
+            guard let scope = pendingInline, scope.length > 0 else { return }
+            styleInline(storage, text: ns.substring(with: scope), offset: scope.location)
+        }
+
         var cursor = range.location
         while cursor < NSMaxRange(range) {
             let lineRange = ns.lineRange(for: NSRange(location: cursor, length: 0))
             let line = ns.substring(with: lineRange)
 
             if let fenceMatch = Self.fenceRx.firstMatch(in: line, range: line.fullRange) {
+                flushInline()
                 // La ligne de délimitation (``` ou ~~~, avec son éventuel nom de
                 // langage) s'efface, et sa hauteur est réduite à une bande fine :
                 // le fond coloré signale déjà le bloc, la bande lui tient lieu de
@@ -196,6 +216,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
                 inBlockComment = false
                 insideFence.toggle()
             } else if insideFence {
+                flushInline()
                 storage.addAttributes([
                     .font: Theme.mono(),
                     .foregroundColor: Theme.codeText,
@@ -205,29 +226,76 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
                 CodeHighlighter.style(storage, line: line, lineRange: lineRange,
                                       language: language, inBlockComment: &inBlockComment)
             } else {
-                styleBlock(storage, line: line, lineRange: lineRange)
+                let block = styleBlock(storage, line: line, lineRange: lineRange)
+                switch block.kind {
+                case .blank:
+                    // Une ligne vide ferme le paragraphe : aucune emphase ne la traverse.
+                    flushInline()
+
+                case .heading, .rule:
+                    // Toujours seuls sur leur ligne : ils n'ouvrent aucun paragraphe.
+                    flushInline()
+                    if block.scope.length > 0 {
+                        styleInline(storage, text: ns.substring(with: block.scope),
+                                    offset: block.scope.location)
+                    }
+
+                case .quote, .list:
+                    // Ouvrent un paragraphe que les lignes suivantes prolongent.
+                    flushInline()
+                    pendingInline = block.scope
+
+                case .plain:
+                    if let pending = pendingInline, pending.upperBound == block.scope.location {
+                        pendingInline = NSUnionRange(pending, block.scope)
+                    } else {
+                        flushInline()
+                        pendingInline = block.scope
+                    }
+                }
             }
 
             cursor = NSMaxRange(lineRange)
             if lineRange.length == 0 { break } // sécurité anti-boucle infinie
         }
+
+        flushInline()
     }
 
     // MARK: - Blocs
 
-    /// Style une ligne hors bloc de code : titre, citation, liste, filet ou paragraphe,
-    /// puis applique les styles en ligne (gras, italique, code, liens…).
-    private func styleBlock(_ storage: NSTextStorage, line: String, lineRange: NSRange) {
+    /// Nature d'une ligne, qui décide si elle prolonge le paragraphe en cours.
+    enum BlockKind {
+        case plain, heading, quote, list, rule, blank
+    }
+
+    /// Style une ligne hors bloc de code : titre, citation, liste, filet ou
+    /// paragraphe. Renvoie sa nature et la portée sur laquelle l'appelant devra
+    /// appliquer les styles en ligne — hors marqueur de bloc, en coordonnées du
+    /// document.
+    @discardableResult
+    private func styleBlock(
+        _ storage: NSTextStorage,
+        line: String,
+        lineRange: NSRange
+    ) -> (kind: BlockKind, scope: NSRange) {
         let full = line.fullRange
         let offset = lineRange.location
         // L'élément d'un bloc s'arrête avant le saut de ligne : sinon, poser le
         // curseur au début de la ligne suivante révélerait les marqueurs du bloc
         // précédent — un « # » qui réapparaît quand on clique sous un titre.
         let element = contentRange(of: line, in: lineRange)
-        // Zone de contenu sur laquelle on cherchera ensuite les styles en ligne.
+        // Zone de contenu sur laquelle l'appelant cherchera les styles en ligne.
         var inlineScope = full
+        var kind = BlockKind.plain
+
+        if element.length == 0 {
+            // Ligne vide : elle ferme le paragraphe en cours.
+            return (.blank, NSRange(location: lineRange.location, length: 0))
+        }
 
         if let m = Self.headingRx.firstMatch(in: line, range: full) {
+            kind = .heading
             let level = m.range(at: 1).length
             storage.addAttributes([
                 .font: Theme.heading(level),
@@ -244,6 +312,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             inlineScope = m.range(at: 3)
 
         } else if let m = Self.quoteRx.firstMatch(in: line, range: full) {
+            kind = .quote
             storage.addAttributes([
                 .font: Theme.bodyItalic,
                 .foregroundColor: Theme.secondary,
@@ -258,6 +327,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             inlineScope = NSRange(location: m.range.length, length: full.length - m.range.length)
 
         } else if Self.ruleRx.firstMatch(in: line, range: full) != nil {
+            kind = .rule
             // Le filet reste visible : c'est lui-même l'élément graphique.
             storage.addAttributes([
                 .foregroundColor: Theme.marker,
@@ -266,6 +336,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             inlineScope = NSRange(location: 0, length: 0)
 
         } else if let m = Self.listRx.firstMatch(in: line, range: full) {
+            kind = .list
             let indent = CGFloat(m.range(at: 1).length) * 12 + 22
             storage.addAttribute(.paragraphStyle,
                                  value: Theme.paragraph(headIndent: indent, spacingAfter: 3),
@@ -301,13 +372,15 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             inlineScope = NSRange(location: m.range.length, length: full.length - m.range.length)
         }
 
-        guard inlineScope.length > 0 else { return }
-        styleInline(storage, line: line, scope: inlineScope, offset: offset)
+        return (kind, inlineScope.shifted(by: offset))
     }
 
     // MARK: - Fragments en ligne
 
-    private func styleInline(_ storage: NSTextStorage, line: String, scope: NSRange, offset: Int) {
+    /// `text` peut couvrir plusieurs lignes : c'est ce qui permet à une emphase
+    /// de traverser un retour à la ligne au sein d'un même paragraphe.
+    private func styleInline(_ storage: NSTextStorage, text line: String, offset: Int) {
+        let scope = line.fullRange
         // Le code en ligne est prioritaire : son contenu ne doit pas être
         // réinterprété comme du gras ou de l'italique.
         var codeRanges: [NSRange] = []
@@ -316,6 +389,10 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             codeRanges.append(m.range)
         }
 
+        /// Un délimiteur situé à l'intérieur d'un fragment de code n'en est pas
+        /// un : `` `a**b` `` ne contient pas de gras. On ne teste que les
+        /// délimiteurs, jamais le contenu — une emphase a parfaitement le droit
+        /// d'englober un fragment de code.
         func isFree(_ range: NSRange) -> Bool {
             !codeRanges.contains { NSIntersectionRange($0, range).length > 0 }
         }
@@ -324,15 +401,20 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         /// l'encadrent et les enregistre comme masquables.
         func emphasise(_ regex: NSRegularExpression, font: NSFont, extraAttributes: [NSAttributedString.Key: Any] = [:]) {
             regex.enumerateMatches(in: line, range: scope) { m, _, _ in
-                guard let m, isFree(m.range) else { return }
+                guard let m else { return }
+                let markerLength = m.range(at: 1).length
+                let localOpening = NSRange(location: m.range.location, length: markerLength)
+                let localClosing = NSRange(location: m.range.upperBound - markerLength,
+                                           length: markerLength)
+                guard isFree(localOpening), isFree(localClosing) else { return }
+
                 var attrs = extraAttributes
                 attrs[.font] = font
                 let element = m.range.shifted(by: offset)
                 storage.addAttributes(attrs, range: element)
 
-                let markerLength = m.range(at: 1).length
-                let opening = NSRange(location: element.location, length: markerLength)
-                let closing = NSRange(location: element.upperBound - markerLength, length: markerLength)
+                let opening = localOpening.shifted(by: offset)
+                let closing = localClosing.shifted(by: offset)
                 storage.addAttribute(.foregroundColor, value: Theme.marker, range: opening)
                 storage.addAttribute(.foregroundColor, value: Theme.marker, range: closing)
                 hide(opening, element: element)
@@ -350,7 +432,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
 
         // Liens : seul le libellé reste, souligné en couleur d'accent.
         Self.linkRx.enumerateMatches(in: line, range: scope) { m, _, _ in
-            guard let m, isFree(m.range) else { return }
+            guard let m, isFree(m.range(at: 1)), isFree(m.range(at: 3)) else { return }
             let element = m.range.shifted(by: offset)
             storage.addAttributes([
                 .foregroundColor: Theme.accent,
@@ -371,7 +453,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         }
 
         Self.autoLinkRx.enumerateMatches(in: line, range: scope) { m, _, _ in
-            guard let m, isFree(m.range) else { return }
+            guard let m, isFree(m.range(at: 1)), isFree(m.range(at: 3)) else { return }
             let element = m.range.shifted(by: offset)
             storage.addAttributes([
                 .foregroundColor: Theme.accent,
