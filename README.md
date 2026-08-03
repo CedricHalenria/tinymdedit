@@ -49,20 +49,21 @@ voulez la garder.
 | ``` ```bloc``` ``` | bloc sur fond discret, délimiteurs masqués, syntaxe colorée |
 | `> citation` | italique, décalé |
 | `-`, `*`, `+`, `1.` | listes à retrait suspendu, tiret dessiné en « • » |
-| `- [ ]`, `- [x]` | vraies cases ☐ / ☑ |
+| `- [ ]`, `- [x]` | vraies cases ☐ / ☑, **cliquables** |
 | `[texte](url)` | libellé souligné, URL en retrait visuel |
 | `<https://…>` | lien automatique |
 | `---`, `***` | filet horizontal |
 
 ## Architecture
 
-Six fichiers, aucune dépendance externe.
+Sept fichiers, aucune dépendance externe.
 
 | Fichier | Rôle |
 |---|---|
 | `MDViewerApp.swift` | le `DocumentGroup` : ouverture, enregistrement, fenêtres, menus |
 | `MarkdownDocument.swift` | le document — une `String`, rien de plus |
 | `MarkdownTextView.swift` | pont SwiftUI ↔ `NSTextView` |
+| `EditorTextView.swift` | la vue texte, et le clic sur les cases à cocher |
 | `MarkdownHighlighter.swift` | le moteur : pose les attributs de style et relève les marqueurs |
 | `MarkerVisibility.swift` | masque les marqueurs à l'écran et dessine puces et cases à cocher |
 | `CodeHighlighter.swift` | coloration générique du contenu des blocs de code |

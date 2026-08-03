@@ -61,6 +61,10 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     /// Lignes de délimitation des blocs de code relevées à la dernière passe.
     private(set) var fenceLines: [NSRange] = []
 
+    /// Caractères portant une case à cocher — celui entre les crochets d'un
+    /// `[ ]` ou `[x]`. La vue s'en sert pour rendre les cases cliquables.
+    private(set) var checkboxes: [NSRange] = []
+
     /// Le curseur est-il posé sur une ligne de délimitation ?
     func isOnFence(_ location: Int) -> Bool {
         fenceLines.contains { location >= $0.location && location <= $0.upperBound }
@@ -119,6 +123,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         hiddenMarkers.removeAll(keepingCapacity: true)
         substitutions.removeAll(keepingCapacity: true)
         fenceLines.removeAll(keepingCapacity: true)
+        checkboxes.removeAll(keepingCapacity: true)
         collecting = isStyled
         markersAreComplete = isStyled
         rehighlight(storage, in: NSRange(location: 0, length: storage.length))
@@ -277,6 +282,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
                 substitute(inner.shifted(by: offset),
                            with: isChecked ? Theme.checkedBox : Theme.uncheckedBox,
                            element: element)
+                if collecting { checkboxes.append(inner.shifted(by: offset)) }
 
             } else if bullet.length == 1 {
                 // Une puce porte du sens : on ne la masque pas, on la dessine

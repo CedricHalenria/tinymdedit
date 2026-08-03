@@ -18,15 +18,35 @@ struct MarkdownTextView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return scrollView
-        }
+        // Pile TextKit 1 assemblée à la main : le masquage de glyphes passe par
+        // NSLayoutManager, qui n'a pas d'équivalent en TextKit 2, et les cases à
+        // cocher cliquables demandent notre propre sous-classe de NSTextView.
+        let storage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        storage.addLayoutManager(layoutManager)
 
-        // Bascule volontairement sur TextKit 1 : le masquage de glyphes passe par
-        // NSLayoutManager, qui n'a pas d'équivalent direct en TextKit 2.
-        let layoutManager = textView.layoutManager
-        layoutManager?.delegate = context.coordinator.visibility
+        let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layoutManager.addTextContainer(container)
+        layoutManager.delegate = context.coordinator.visibility
+
+        let textView = EditorTextView(frame: .zero, textContainer: container)
+        textView.minSize = CGSize.zero
+        textView.maxSize = CGSize(width: CGFloat.greatestFiniteMagnitude,
+                                  height: CGFloat.greatestFiniteMagnitude)
+        textView.isHorizontallyResizable = false
+
+        let scrollView = NSScrollView()
+        scrollView.borderType = .noBorder
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = textView
+
+        textView.clickableCheckboxes = { [weak coordinator = context.coordinator] in
+            coordinator?.clickableCheckboxes() ?? []
+        }
+        textView.onToggleCheckbox = { [weak coordinator = context.coordinator] index in
+            coordinator?.toggleCheckbox(at: index)
+        }
 
         textView.delegate = context.coordinator
         textView.textStorage?.delegate = context.coordinator.highlighter
@@ -141,6 +161,30 @@ struct MarkdownTextView: NSViewRepresentable {
             visibility.setSelection(textView.selectedRange())
             syncVisibility()
             invalidateGlyphs(in: NSRange(location: 0, length: storage.length))
+            textView.window?.invalidateCursorRects(for: textView)
+        }
+
+        /// Cases réellement dessinées en case à cocher — donc cliquables. Une
+        /// ligne dont le curseur a révélé la syntaxe n'en fait plus partie.
+        func clickableCheckboxes() -> [NSRange] {
+            guard highlighter.isStyled, highlighter.markersAreComplete else { return [] }
+            return highlighter.checkboxes.filter { visibility.isSubstituted($0.location) }
+        }
+
+        /// Bascule `[ ]` ↔ `[x]` sans déplacer le curseur ni révéler la ligne.
+        func toggleCheckbox(at index: Int) {
+            guard let textView, let storage = textView.textStorage,
+                  index < storage.length else { return }
+
+            let range = NSRange(location: index, length: 1)
+            let current = (storage.string as NSString).substring(with: range)
+            let replacement = current.lowercased() == "x" ? " " : "x"
+
+            // Passer par shouldChangeText/didChangeText inscrit la bascule dans
+            // la pile d'annulation, au même titre qu'une frappe au clavier.
+            guard textView.shouldChangeText(in: range, replacementString: replacement) else { return }
+            storage.replaceCharacters(in: range, with: replacement)
+            textView.didChangeText()
         }
 
         private func syncVisibility() {

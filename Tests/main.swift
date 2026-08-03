@@ -135,6 +135,30 @@ check("curseur sur la délimitation → elle réapparaît", !visibility.isHidden
 visibility.setSelection(NSRange(location: at("avec"), length: 0))
 check("puce toujours dessinée, curseur où qu'il soit", visibility.isSubstituted(at("- item")))
 
+print("\nCASES À COCHER CLIQUABLES")
+check("deux cases relevées", hl.checkboxes.count == 2)
+check("case vide repérée à la bonne position",
+      hl.checkboxes.contains { $0.location == at("[ ] tâche", 1) })
+check("case cochée repérée à la bonne position",
+      hl.checkboxes.contains { $0.location == at("[x] tâche", 1) })
+
+// Bascule : le clic ne fait que remplacer un caractère par un autre, ce qui
+// laisse toutes les positions inchangées.
+let clickable = NSTextStorage(string: sample)
+let clickHighlighter = MarkdownHighlighter()
+clickable.delegate = clickHighlighter
+clickHighlighter.rehighlight(clickable)
+let emptyBox = at("[ ] tâche", 1)
+func drawn(_ h: MarkdownHighlighter, _ index: Int) -> Character? {
+    h.substitutions.first { $0.range.location == index }?.character
+}
+check("avant clic : case vide", drawn(clickHighlighter, emptyBox) == Theme.uncheckedBox)
+clickable.replaceCharacters(in: NSRange(location: emptyBox, length: 1), with: "x")
+check("après clic : case cochée", drawn(clickHighlighter, emptyBox) == Theme.checkedBox)
+check("longueur du document inchangée", clickable.length == (sample as NSString).length)
+clickable.replaceCharacters(in: NSRange(location: emptyBox, length: 1), with: " ")
+check("second clic : case revidée", drawn(clickHighlighter, emptyBox) == Theme.uncheckedBox)
+
 print("\nGÉOMÉTRIE DU BLOC DE CODE")
 func paragraph(_ needle: String, _ o: Int = 0) -> NSParagraphStyle {
     attrs(needle, o)[.paragraphStyle] as! NSParagraphStyle
