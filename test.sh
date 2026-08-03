@@ -15,6 +15,7 @@ swiftc -O -o "$OUT/check" \
 	Sources/TinyMDEdit/MarkdownHighlighter.swift \
 	Sources/TinyMDEdit/Theme.swift \
 	Sources/TinyMDEdit/MarkerVisibility.swift \
-	Sources/TinyMDEdit/CodeHighlighter.swift
+	Sources/TinyMDEdit/CodeHighlighter.swift \
+	Sources/TinyMDEdit/SemanticVersion.swift
 
 "$OUT/check"

@@ -9,10 +9,14 @@ struct ContentView: View {
 
     @Binding var document: MarkdownDocument
     @AppStorage(Settings.styledKey) private var isStyled = true
+    @ObservedObject private var updates = UpdateChecker.shared
 
     var body: some View {
         MarkdownTextView(text: $document.text, isStyled: isStyled)
             .frame(minWidth: 420, minHeight: 300)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                UpdateBanner(checker: updates)
+            }
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Picker("Affichage", selection: $isStyled) {

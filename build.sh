@@ -39,8 +39,30 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-echo "▸ Signature ad-hoc…"
-codesign --force --sign - "$APP"
+# La version publiée vient du tag Git lors d'une publication ; en local, on garde
+# celle inscrite dans Resources/Info.plist.
+if [ -n "${TINYMDEDIT_VERSION:-}" ]; then
+	/usr/libexec/PlistBuddy -c \
+		"Set :CFBundleShortVersionString $TINYMDEDIT_VERSION" "$APP/Contents/Info.plist"
+	/usr/libexec/PlistBuddy -c \
+		"Set :CFBundleVersion ${TINYMDEDIT_BUILD:-1}" "$APP/Contents/Info.plist"
+	echo "▸ Version $TINYMDEDIT_VERSION"
+fi
+
+# Signature. « - » est une signature ad-hoc : elle suffit sur la machine qui
+# compile, mais macOS met en quarantaine une app ainsi signée téléchargée depuis
+# Internet. Le jour où un certificat Developer ID est disponible, il suffit de
+# renseigner TINYMDEDIT_SIGN_IDENTITY pour signer pour de bon — la notarisation
+# se greffe alors après cette étape.
+SIGN_IDENTITY="${TINYMDEDIT_SIGN_IDENTITY:--}"
+if [ "$SIGN_IDENTITY" = "-" ]; then
+	echo "▸ Signature ad-hoc…"
+	codesign --force --sign - "$APP"
+else
+	echo "▸ Signature avec « $SIGN_IDENTITY »…"
+	codesign --force --options runtime --timestamp \
+		--sign "$SIGN_IDENTITY" "$APP"
+fi
 
 # Sans ça, Launch Services garde en cache une version antérieure du bundle
 # et les fichiers .md ne s'associent pas à la bonne app.

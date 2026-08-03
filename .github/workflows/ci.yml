@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Version de Swift
+        run: swift --version
+
+      - name: Banc d'essai
+        run: ./test.sh
+
+      - name: Compilation du bundle
+        run: ./build.sh

@@ -5,14 +5,31 @@ struct TinyMDEditApp: App {
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { file in
             ContentView(document: file.$document)
+                .task { UpdateChecker.shared.checkAutomaticallyIfNeeded() }
         }
         .defaultSize(width: 820, height: 720)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Divider()
+                MisesAJourCommands()
+            }
             CommandGroup(before: .toolbar) {
                 AffichageCommands()
                 Divider()
             }
         }
+    }
+}
+
+/// Recherche de mises à jour, et son interrupteur.
+private struct MisesAJourCommands: View {
+    @AppStorage(UpdateChecker.automaticKey) private var automatique = true
+    @ObservedObject private var updates = UpdateChecker.shared
+
+    var body: some View {
+        Button("Rechercher les mises à jour…") { updates.checkNow() }
+            .disabled(updates.isChecking)
+        Toggle("Vérifier automatiquement", isOn: $automatique)
     }
 }
 

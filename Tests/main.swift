@@ -237,6 +237,17 @@ fenceCaret.rehighlight(fenceStorage)
 let openedFence = fenceStorage.attributes(at: fenceCaret.caretLocation, effectiveRange: nil)[.paragraphStyle] as! NSParagraphStyle
 check("curseur sur la délimitation → hauteur rendue", openedFence.maximumLineHeight == 0)
 
+print("\nCOMPARAISON DE VERSIONS")
+check("version plus récente détectée", SemanticVersion.isNewer("0.2.0", than: "0.1.0"))
+check("version identique ignorée", !SemanticVersion.isNewer("0.1.0", than: "0.1.0"))
+check("version plus ancienne ignorée", !SemanticVersion.isNewer("0.1.0", than: "0.2.0"))
+check("préfixe « v » ignoré", SemanticVersion.isNewer("v1.0.0", than: "0.9.9"))
+check("comparaison numérique, pas alphabétique", SemanticVersion.isNewer("0.10.0", than: "0.9.0"))
+check("longueurs différentes complétées par des zéros",
+      !SemanticVersion.isNewer("1.2", than: "1.2.0") && SemanticVersion.isNewer("1.2.1", than: "1.2"))
+check("suffixe de pré-version tronqué", !SemanticVersion.isNewer("1.0.0-beta.1", than: "1.0.0"))
+check("composant illisible traité comme zéro", !SemanticVersion.isNewer("1.0.x", than: "1.0.0"))
+
 print("\nÉDITION — les marqueurs suivent le décalage")
 // Régression : insérer un caractère décale tout ce qui suit. Le relevé doit
 // suivre — et la vue redemander la génération des glyphes jusqu'à la fin du

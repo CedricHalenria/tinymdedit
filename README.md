@@ -19,8 +19,32 @@ monospace uniforme, aucune coloration, le fichier tel qu'il est.
 
 ## Installation
 
-Prérequis : macOS 14+, Apple Silicon, et le toolchain Swift (les Command Line Tools
-suffisent — **Xcode n'est pas nécessaire**).
+### Par Homebrew
+
+```sh
+brew tap CedricHalenria/tap
+brew install --cask tinymdedit
+```
+
+C'est la voie la plus simple : Homebrew lève lui-même la mise en quarantaine, et
+`brew upgrade` suffit ensuite à mettre à jour.
+
+### Par téléchargement direct
+
+Récupérez la dernière archive sur la [page des versions](https://github.com/CedricHalenria/tinymdedit/releases),
+décompressez-la et glissez **TinyMDEdit.app** dans `/Applications`.
+
+Au premier lancement, macOS refusera d'ouvrir l'app. Ce n'est pas un défaut de
+l'application : elle n'est pas encore signée par un certificat Apple payant, et
+macOS met en quarantaine tout ce qui vient d'Internet sans cette signature.
+Allez dans **Réglages Système → Confidentialité et sécurité**, puis cliquez sur
+**Ouvrir quand même** en bas de la fenêtre. Les lancements suivants se font
+normalement.
+
+### En compilant soi-même
+
+Prérequis : macOS 14+, et le toolchain Swift — les Command Line Tools suffisent,
+**Xcode n'est pas nécessaire**.
 
 ```sh
 git clone https://github.com/CedricHalenria/tinymdedit.git
@@ -28,18 +52,25 @@ cd tinymdedit
 ./build.sh --run
 ```
 
-L'app est produite dans `build/TinyMDEdit.app`. Glissez-la dans `/Applications` si vous
-voulez la garder.
+L'app est produite dans `build/TinyMDEdit.app`.
 
 ```sh
-./build.sh          # build release
-./build.sh --debug  # build debug
-./test.sh           # banc d'essai du moteur de stylage
+./build.sh             # build release
+./build.sh --debug     # build debug
+./test.sh              # banc d'essai du moteur de stylage
 ./Tools/make-icon.sh   # régénère l'icône
 ```
 
 L'icône n'est pas un binaire livré tel quel : elle est **dessinée par du code**
 (`Tools/make-icon/main.swift`), donc lisible et modifiable comme le reste.
+
+## Vie privée
+
+L'application ne collecte rien et n'envoie rien. Sa **seule** connexion réseau
+est la recherche de nouvelles versions : une requête vers l'API publique des
+releases de ce dépôt, au plus une fois par jour, sans aucun identifiant. Elle se
+désactive dans le menu **TinyMDEdit → Vérifier automatiquement**, et l'app
+n'installe jamais rien d'elle-même — elle ouvre la page de téléchargement.
 
 ## Syntaxe reconnue
 
