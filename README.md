@@ -19,6 +19,12 @@ monospace uniforme, aucune coloration, le fichier tel qu'il est.
 
 ## Installation
 
+> **Premier lancement, quelle que soit la voie choisie.** Tant que l'application
+> n'est pas notarisée par Apple, macOS refuse de l'ouvrir — y compris installée
+> par Homebrew. Allez dans **Réglages Système → Confidentialité et sécurité**,
+> puis cliquez sur **Ouvrir quand même** en bas de la fenêtre. C'est à faire une
+> seule fois ; les lancements suivants sont normaux.
+
 ### Par Homebrew
 
 ```sh
@@ -27,10 +33,7 @@ brew trust CedricHalenria/tap
 brew install --cask tinymdedit
 ```
 
-C'est la voie la plus simple : Homebrew n'applique pas la mise en quarantaine,
-l'app s'ouvre donc directement, et `brew upgrade --cask tinymdedit` suffit
-ensuite à mettre à jour.
-
+Installation et mises à jour en une commande — `brew upgrade --cask tinymdedit`.
 L'étape `brew trust` est exigée depuis Homebrew 6 pour tout cask provenant d'un
 tap tiers ; elle n'est à faire qu'une fois.
 
@@ -38,13 +41,6 @@ tap tiers ; elle n'est à faire qu'une fois.
 
 Récupérez la dernière archive sur la [page des versions](https://github.com/CedricHalenria/tinymdedit/releases),
 décompressez-la et glissez **TinyMDEdit.app** dans `/Applications`.
-
-Au premier lancement, macOS refusera d'ouvrir l'app. Ce n'est pas un défaut de
-l'application : elle n'est pas encore signée par un certificat Apple payant, et
-macOS met en quarantaine tout ce qui vient d'Internet sans cette signature.
-Allez dans **Réglages Système → Confidentialité et sécurité**, puis cliquez sur
-**Ouvrir quand même** en bas de la fenêtre. Les lancements suivants se font
-normalement.
 
 ### En compilant soi-même
 

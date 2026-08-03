@@ -56,17 +56,20 @@ jobs:
           body: |
             ## Installation
 
-            1. Téléchargez et décompressez l'archive, puis glissez **TinyMDEdit.app** dans `/Applications`.
-            2. Au premier lancement, macOS refusera d'ouvrir l'app : elle n'est pas
-               encore signée par un certificat Apple payant.
-               Allez dans **Réglages Système → Confidentialité et sécurité**, puis
-               cliquez sur **Ouvrir quand même** en bas de la fenêtre.
-            3. Les lancements suivants se font normalement.
-
-            Par Homebrew, l'étape 2 n'est pas nécessaire :
+            **Par Homebrew** — installation et mises à jour en une commande :
 
             ```sh
             brew tap CedricHalenria/tap
             brew trust CedricHalenria/tap
             brew install --cask tinymdedit
             ```
+
+            **Par téléchargement direct** — décompressez l'archive et glissez
+            **TinyMDEdit.app** dans `/Applications`.
+
+            ### Premier lancement
+
+            Quelle que soit la voie choisie, Homebrew comprise, macOS refusera
+            d'ouvrir l'app : elle n'est pas encore signée par un certificat Apple
+            payant. Allez dans **Réglages Système → Confidentialité et sécurité**,
+            puis cliquez sur **Ouvrir quand même**. C'est à faire une seule fois.
