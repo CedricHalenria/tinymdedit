@@ -1,0 +1,83 @@
+import AppKit
+
+/// Fontes, couleurs et métriques de l'éditeur.
+/// Tout est centralisé ici pour pouvoir ajuster le rendu en un seul endroit.
+enum Theme {
+
+    // MARK: - Tailles
+
+    static let bodySize: CGFloat = 15
+    static let monoSize: CGFloat = 13.5
+
+    /// Marges intérieures de la zone de texte (style TextEdit, respirant).
+    static let textInset = NSSize(width: 28, height: 22)
+
+    // MARK: - Fontes
+
+    static var body: NSFont {
+        .systemFont(ofSize: bodySize)
+    }
+
+    static var bodyBold: NSFont {
+        .systemFont(ofSize: bodySize, weight: .semibold)
+    }
+
+    static var bodyItalic: NSFont {
+        NSFontManager.shared.convert(body, toHaveTrait: .italicFontMask)
+    }
+
+    static var bodyBoldItalic: NSFont {
+        NSFontManager.shared.convert(bodyBold, toHaveTrait: .italicFontMask)
+    }
+
+    static func mono(size: CGFloat = monoSize) -> NSFont {
+        .monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Taille des titres `#` à `######`.
+    static func heading(_ level: Int) -> NSFont {
+        let sizes: [CGFloat] = [27, 23, 20, 18, 16, 15]
+        let clamped = min(max(level, 1), 6)
+        return .systemFont(ofSize: sizes[clamped - 1], weight: .bold)
+    }
+
+    // MARK: - Couleurs
+
+    /// Couleur du texte courant.
+    static let text = NSColor.textColor
+    /// Couleur des marqueurs Markdown (`##`, `**`, `-`, …) : présents mais discrets.
+    static let marker = NSColor.tertiaryLabelColor
+    /// Texte secondaire (citations, URL des liens).
+    static let secondary = NSColor.secondaryLabelColor
+    /// Couleur d'accent du système, pour les liens et les puces.
+    static let accent = NSColor.controlAccentColor
+    /// Fond des blocs et fragments de code.
+    static let codeBackground = NSColor.quaternaryLabelColor.withAlphaComponent(0.35)
+    /// Texte du code.
+    static let codeText = NSColor.systemPink
+
+    // MARK: - Paragraphes
+
+    /// Style de paragraphe de base (mode mise en page).
+    static func paragraph(
+        headIndent: CGFloat = 0,
+        firstLineHeadIndent: CGFloat = 0,
+        spacingBefore: CGFloat = 0,
+        spacingAfter: CGFloat = 8
+    ) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineHeightMultiple = 1.25
+        style.paragraphSpacing = spacingAfter
+        style.paragraphSpacingBefore = spacingBefore
+        style.headIndent = headIndent
+        style.firstLineHeadIndent = firstLineHeadIndent
+        return style
+    }
+
+    /// Style de paragraphe du mode texte brut : compact, sans fioriture.
+    static var rawParagraph: NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineHeightMultiple = 1.2
+        return style
+    }
+}
