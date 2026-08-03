@@ -13,6 +13,7 @@ trap 'rm -rf "$OUT"' EXIT
 swiftc -O -o "$OUT/check" \
 	Tests/main.swift \
 	Sources/MDViewer/MarkdownHighlighter.swift \
-	Sources/MDViewer/Theme.swift
+	Sources/MDViewer/Theme.swift \
+	Sources/MDViewer/MarkerVisibility.swift
 
 "$OUT/check"
