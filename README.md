@@ -35,7 +35,11 @@ voulez la garder.
 ./build.sh          # build release
 ./build.sh --debug  # build debug
 ./test.sh           # banc d'essai du moteur de stylage
+./Tools/make-icon.sh   # régénère l'icône
 ```
+
+L'icône n'est pas un binaire livré tel quel : elle est **dessinée par du code**
+(`Tools/make-icon/main.swift`), donc lisible et modifiable comme le reste.
 
 ## Syntaxe reconnue
 
