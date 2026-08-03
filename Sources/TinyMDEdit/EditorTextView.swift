@@ -17,6 +17,43 @@ final class EditorTextView: NSTextView {
     /// Appelé avec l'index du caractère à basculer.
     var onToggleCheckbox: (Int) -> Void = { _ in }
 
+    /// Blocs de citation, pour la barre verticale tracée dans la marge.
+    var quoteBlocks: () -> [NSRange] = { [] }
+
+    // MARK: - Colonne de lecture
+
+    /// Centre la colonne de texte et lui impose une largeur maximale : au-delà,
+    /// les lignes deviennent trop longues pour que l'œil retrouve le début de la
+    /// suivante. Les marges absorbent la largeur excédentaire.
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        let horizontal = max(Theme.textInset.width, (newSize.width - Theme.maxContentWidth) / 2)
+        // Le test évite de relancer la mise en page en boucle : modifier les
+        // marges redimensionne la vue, ce qui rappelle cette méthode.
+        if abs(textContainerInset.width - horizontal) > 0.5 {
+            textContainerInset = NSSize(width: horizontal, height: Theme.textInset.height)
+        }
+    }
+
+    // MARK: - Barre des citations
+
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+        Theme.quoteBar.setFill()
+        for block in visible(quoteBlocks()) {
+            guard var bar = boundingRect(for: block) else { continue }
+            // La barre se place dans le retrait laissé libre à gauche du texte.
+            bar.origin.x = textContainerOrigin.x + Theme.quoteIndent - 12
+            bar.size.width = Theme.quoteBarWidth
+            guard bar.intersects(rect) else { continue }
+            NSBezierPath(
+                roundedRect: bar,
+                xRadius: Theme.quoteBarWidth / 2,
+                yRadius: Theme.quoteBarWidth / 2
+            ).fill()
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if event.clickCount == 1, let index = checkbox(at: point) {
@@ -47,16 +84,17 @@ final class EditorTextView: NSTextView {
         return nil
     }
 
-    /// Ne considère que les cases situées dans la partie visible : calculer la
-    /// géométrie d'une case forcerait sinon la mise en page de tout le document.
     private func visibleCheckboxes() -> [NSRange] {
-        let checkboxes = clickableCheckboxes()
-        guard !checkboxes.isEmpty,
-              let layoutManager, let container = textContainer else { return [] }
+        visible(clickableCheckboxes())
+    }
 
-        let visibleGlyphs = layoutManager.glyphRange(forBoundingRect: visibleRect, in: container)
-        let visible = layoutManager.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
-        return checkboxes.filter { NSLocationInRange($0.location, visible) }
+    /// Ne garde que les plages situées dans la partie affichée : calculer la
+    /// géométrie d'une plage forcerait sinon la mise en page de tout le document.
+    private func visible(_ ranges: [NSRange]) -> [NSRange] {
+        guard !ranges.isEmpty, let layoutManager, let container = textContainer else { return [] }
+        let glyphs = layoutManager.glyphRange(forBoundingRect: visibleRect, in: container)
+        let characters = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        return ranges.filter { NSIntersectionRange($0, characters).length > 0 }
     }
 
     private func boundingRect(for range: NSRange) -> NSRect? {

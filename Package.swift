@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "MDViewer",
+    name: "TinyMDEdit",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "MDViewer",
-            path: "Sources/MDViewer",
+            name: "TinyMDEdit",
+            path: "Sources/TinyMDEdit",
             swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]

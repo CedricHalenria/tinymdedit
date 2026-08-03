@@ -47,6 +47,10 @@ struct MarkdownTextView: NSViewRepresentable {
         textView.onToggleCheckbox = { [weak coordinator = context.coordinator] index in
             coordinator?.toggleCheckbox(at: index)
         }
+        textView.quoteBlocks = { [weak coordinator = context.coordinator] in
+            guard let coordinator, coordinator.highlighter.isStyled else { return [] }
+            return coordinator.highlighter.quoteBlocks
+        }
 
         textView.delegate = context.coordinator
         textView.textStorage?.delegate = context.coordinator.highlighter
@@ -162,6 +166,7 @@ struct MarkdownTextView: NSViewRepresentable {
             syncVisibility()
             invalidateGlyphs(in: NSRange(location: 0, length: storage.length))
             textView.window?.invalidateCursorRects(for: textView)
+            textView.needsDisplay = true
         }
 
         /// Cases réellement dessinées en case à cocher — donc cliquables. Une
@@ -182,9 +187,20 @@ struct MarkdownTextView: NSViewRepresentable {
 
             // Passer par shouldChangeText/didChangeText inscrit la bascule dans
             // la pile d'annulation, au même titre qu'une frappe au clavier.
+            let selection = textView.selectedRange()
             guard textView.shouldChangeText(in: range, replacementString: replacement) else { return }
             storage.replaceCharacters(in: range, with: replacement)
             textView.didChangeText()
+
+            // Le curseur doit rester exactement où il était : le laisser atterrir
+            // sur la ligne cochée y révélerait la syntaxe, et la ligne se
+            // réindenterait sous le clic.
+            textView.setSelectedRange(selection)
+
+            // Un clic est rare : on se paie une passe complète plutôt que la mise
+            // à jour partielle du cas « frappe au clavier », pour ne laisser aucun
+            // reliquat de mise en page.
+            restyle()
         }
 
         private func syncVisibility() {

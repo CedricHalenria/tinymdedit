@@ -6,11 +6,20 @@ enum Theme {
 
     // MARK: - Tailles
 
-    static let bodySize: CGFloat = 15
-    static let monoSize: CGFloat = 13.5
+    static let bodySize: CGFloat = 16.5
+    static let monoSize: CGFloat = 14
 
-    /// Marges intérieures de la zone de texte (style TextEdit, respirant).
-    static let textInset = NSSize(width: 28, height: 22)
+    /// Marges intérieures minimales de la zone de texte.
+    static let textInset = NSSize(width: 32, height: 28)
+
+    /// Largeur maximale de la colonne de texte. Au-delà, la ligne devient trop
+    /// longue pour que l'œil retrouve facilement le début de la suivante : on
+    /// centre la colonne et on laisse le reste en marge.
+    static let maxContentWidth: CGFloat = 740
+
+    /// Barre verticale des citations : épaisseur et retrait par rapport au texte.
+    static let quoteBarWidth: CGFloat = 3
+    static let quoteIndent: CGFloat = 24
 
     // MARK: - Fontes
 
@@ -49,7 +58,7 @@ enum Theme {
 
     /// Taille des titres `#` à `######`.
     static func heading(_ level: Int) -> NSFont {
-        let sizes: [CGFloat] = [27, 23, 20, 18, 16, 15]
+        let sizes: [CGFloat] = [30, 25, 21.5, 19, 17.5, 16.5]
         let clamped = min(max(level, 1), 6)
         return .systemFont(ofSize: sizes[clamped - 1], weight: .bold)
     }
@@ -64,6 +73,8 @@ enum Theme {
     static let secondary = NSColor.secondaryLabelColor
     /// Couleur d'accent du système, pour les liens et les puces.
     static let accent = NSColor.controlAccentColor
+    /// Barre verticale à gauche des citations.
+    static let quoteBar = NSColor.quaternaryLabelColor
     /// Fond des blocs de code délimités par ``` — utile pour marquer l'étendue
     /// d'une zone multi-lignes. Le code *en ligne*, lui, n'a pas de fond : la
     /// fonte monospace et la couleur suffisent à le distinguer.
@@ -110,10 +121,10 @@ enum Theme {
         headIndent: CGFloat = 0,
         firstLineHeadIndent: CGFloat = 0,
         spacingBefore: CGFloat = 0,
-        spacingAfter: CGFloat = 8
+        spacingAfter: CGFloat = 12
     ) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineHeightMultiple = 1.25
+        style.lineHeightMultiple = 1.5
         style.paragraphSpacing = spacingAfter
         style.paragraphSpacingBefore = spacingBefore
         style.headIndent = headIndent

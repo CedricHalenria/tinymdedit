@@ -29,6 +29,10 @@ func check(_ label: String, _ condition: Bool) {
 }
 
 let ns = sample as NSString
+func paragraph0(_ needle: String, _ o: Int = 0) -> NSParagraphStyle {
+    storage.attributes(at: (sample as NSString).range(of: needle).location + o,
+                       effectiveRange: nil)[.paragraphStyle] as! NSParagraphStyle
+}
 func at(_ needle: String, _ offsetInNeedle: Int = 0) -> Int {
     ns.range(of: needle).location + offsetInNeedle
 }
@@ -39,7 +43,7 @@ func font(_ needle: String, _ o: Int = 0) -> NSFont { attrs(needle, o)[.font] as
 func color(_ needle: String, _ o: Int = 0) -> NSColor? { attrs(needle, o)[.foregroundColor] as? NSColor }
 
 print("MODE MISE EN PAGE — attributs")
-check("titre en grand (27pt)", font("Titre 1").pointSize == 27)
+check("titre en grand (30pt)", font("Titre 1").pointSize == 30)
 check("marqueur ## en gris", color("# Titre") == Theme.marker)
 check("gras appliqué", font("gras").fontDescriptor.symbolicTraits.contains(.bold))
 check("italique appliqué", font("italique").fontDescriptor.symbolicTraits.contains(.italic))
@@ -159,19 +163,32 @@ check("longueur du document inchangée", clickable.length == (sample as NSString
 clickable.replaceCharacters(in: NSRange(location: emptyBox, length: 1), with: " ")
 check("second clic : case revidée", drawn(clickHighlighter, emptyBox) == Theme.uncheckedBox)
 
+print("\nCITATIONS ET COLONNE DE LECTURE")
+check("un bloc de citation relevé", hl.quoteBlocks.count == 1)
+check("bloc de citation à la bonne position",
+      hl.quoteBlocks.first?.location == at("> citation"))
+check("citation en retrait", paragraph0("> citation").firstLineHeadIndent == Theme.quoteIndent)
+
+// Lignes de citation consécutives : la barre doit être continue, donc les
+// lignes fusionnées en un seul bloc.
+let quotes = NSTextStorage(string: "> une\n> deux\n\ntexte\n> trois\n")
+let quoteHighlighter = MarkdownHighlighter()
+quotes.delegate = quoteHighlighter
+quoteHighlighter.rehighlight(quotes)
+check("lignes consécutives fusionnées", quoteHighlighter.quoteBlocks.count == 2)
+check("premier bloc couvre les deux lignes", quoteHighlighter.quoteBlocks.first?.length == 13)
+
 print("\nGÉOMÉTRIE DU BLOC DE CODE")
-func paragraph(_ needle: String, _ o: Int = 0) -> NSParagraphStyle {
-    attrs(needle, o)[.paragraphStyle] as! NSParagraphStyle
-}
+
 check("délimitation réduite à une bande fine",
-      paragraph("```swift").maximumLineHeight == Theme.fencePadding)
+      paragraph0("```swift").maximumLineHeight == Theme.fencePadding)
 check("bande jointive au code (aucun espacement)",
-      paragraph("```swift").paragraphSpacing == 0)
+      paragraph0("```swift").paragraphSpacing == 0)
 check("lignes de code jointives entre elles",
-      paragraph("// bloc").paragraphSpacing == 0 && paragraph("// bloc").paragraphSpacingBefore == 0)
+      paragraph0("// bloc").paragraphSpacing == 0 && paragraph0("// bloc").paragraphSpacingBefore == 0)
 check("lignes de code à hauteur normale",
-      paragraph("// bloc").maximumLineHeight == 0)
-check("séparation après le bloc", paragraph("```\n[lien]").paragraphSpacing > 0)
+      paragraph0("// bloc").maximumLineHeight == 0)
+check("séparation après le bloc", paragraph0("```\n[lien]").paragraphSpacing > 0)
 check("deux délimitations relevées", hl.fenceLines.count == 2)
 
 // Le curseur posé sur la délimitation lui rend sa hauteur, sinon le texte

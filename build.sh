@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Fabrique MDViewer.app sans Xcode : SwiftPM compile le binaire, on assemble
+# Fabrique TinyMDEdit.app sans Xcode : SwiftPM compile le binaire, on assemble
 # le bundle à la main, puis on le signe en ad-hoc pour que macOS l'accepte.
 #
 # Usage :
@@ -12,7 +12,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-APP_NAME="MDViewer"
+APP_NAME="TinyMDEdit"
 CONFIG="release"
 RUN=0
 

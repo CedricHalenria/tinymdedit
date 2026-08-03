@@ -65,6 +65,10 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     /// `[ ]` ou `[x]`. La vue s'en sert pour rendre les cases cliquables.
     private(set) var checkboxes: [NSRange] = []
 
+    /// Citations, lignes consécutives fusionnées en un seul bloc : la vue y trace
+    /// une barre verticale continue plutôt qu'un trait par ligne.
+    private(set) var quoteBlocks: [NSRange] = []
+
     /// Le curseur est-il posé sur une ligne de délimitation ?
     func isOnFence(_ location: Int) -> Bool {
         fenceLines.contains { location >= $0.location && location <= $0.upperBound }
@@ -124,6 +128,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         substitutions.removeAll(keepingCapacity: true)
         fenceLines.removeAll(keepingCapacity: true)
         checkboxes.removeAll(keepingCapacity: true)
+        quoteBlocks.removeAll(keepingCapacity: true)
         collecting = isStyled
         markersAreComplete = isStyled
         rehighlight(storage, in: NSRange(location: 0, length: storage.length))
@@ -242,11 +247,14 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             storage.addAttributes([
                 .font: Theme.bodyItalic,
                 .foregroundColor: Theme.secondary,
-                .paragraphStyle: Theme.paragraph(headIndent: 22, firstLineHeadIndent: 22)
+                .paragraphStyle: Theme.paragraph(headIndent: Theme.quoteIndent,
+                                                 firstLineHeadIndent: Theme.quoteIndent,
+                                                 spacingAfter: 4)
             ], range: lineRange)
             storage.addAttribute(.foregroundColor, value: Theme.accent,
                                  range: m.range(at: 1).shifted(by: offset))
             hide(m.range.shifted(by: offset), element: element)
+            appendQuote(lineRange)
             inlineScope = NSRange(location: m.range.length, length: full.length - m.range.length)
 
         } else if Self.ruleRx.firstMatch(in: line, range: full) != nil {
@@ -403,6 +411,17 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     private func hide(_ marker: NSRange, element: NSRange) {
         guard collecting, marker.length > 0 else { return }
         hiddenMarkers.append(MarkerRange(marker: marker, element: element))
+    }
+
+    /// Ajoute une ligne de citation, en la fusionnant avec le bloc précédent si
+    /// elle le prolonge — la barre verticale doit être continue.
+    private func appendQuote(_ lineRange: NSRange) {
+        guard collecting else { return }
+        if let last = quoteBlocks.last, last.upperBound == lineRange.location {
+            quoteBlocks[quoteBlocks.count - 1] = NSUnionRange(last, lineRange)
+        } else {
+            quoteBlocks.append(lineRange)
+        }
     }
 
     /// Enregistre un caractère à redessiner sous une autre forme.

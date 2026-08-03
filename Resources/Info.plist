@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>MDViewer</string>
+	<string>TinyMDEdit</string>
 	<key>CFBundleDisplayName</key>
-	<string>MDViewer</string>
+	<string>TinyMDEdit</string>
 	<key>CFBundleIdentifier</key>
-	<string>net.cqfd.mdviewer</string>
+	<string>net.cqfd.tinymdedit</string>
 	<key>CFBundleExecutable</key>
-	<string>MDViewer</string>
+	<string>TinyMDEdit</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -1,4 +1,4 @@
-# MDViewer
+# TinyMDEdit
 
 Un éditeur Markdown **natif** et *volontairement simple* pour macOS.
 
@@ -23,7 +23,7 @@ ils sont juste affichés en gris discret. Vous pouvez taper dedans normalement.
 > Les citations passent en italique, décalées vers la droite.
 
 - [x] Une case à cocher
-- [ ] Une case cochée
+- [x] Une case cochée
 
 ```swift
 // Dans un bloc de code, rien n'est réinterprété :

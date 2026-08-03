@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct MDViewerApp: App {
+struct TinyMDEditApp: App {
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { file in
             ContentView(document: file.$document)
