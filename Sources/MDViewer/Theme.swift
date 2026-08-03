@@ -51,10 +51,18 @@ enum Theme {
     static let secondary = NSColor.secondaryLabelColor
     /// Couleur d'accent du système, pour les liens et les puces.
     static let accent = NSColor.controlAccentColor
-    /// Fond des blocs et fragments de code.
-    static let codeBackground = NSColor.quaternaryLabelColor.withAlphaComponent(0.35)
-    /// Texte du code.
-    static let codeText = NSColor.systemPink
+    /// Fond des blocs de code délimités par ``` — utile pour marquer l'étendue
+    /// d'une zone multi-lignes. Le code *en ligne*, lui, n'a pas de fond : la
+    /// fonte monospace et la couleur suffisent à le distinguer.
+    static let codeBlockBackground = NSColor.quaternaryLabelColor.withAlphaComponent(0.25)
+
+    /// Texte du code : vert terminal, décliné pour rester lisible sur fond clair
+    /// comme sur fond sombre.
+    static let codeText = NSColor(name: "codeText") { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.24, green: 0.83, blue: 0.32, alpha: 1)
+            : NSColor(srgbRed: 0.06, green: 0.45, blue: 0.13, alpha: 1)
+    }
 
     // MARK: - Paragraphes
 

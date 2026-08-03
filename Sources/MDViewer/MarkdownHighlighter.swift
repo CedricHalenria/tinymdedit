@@ -133,14 +133,14 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
                 storage.addAttributes([
                     .font: Theme.mono(),
                     .foregroundColor: Theme.marker,
-                    .backgroundColor: Theme.codeBackground
+                    .backgroundColor: Theme.codeBlockBackground
                 ], range: lineRange)
                 insideFence.toggle()
             } else if insideFence {
                 storage.addAttributes([
                     .font: Theme.mono(),
-                    .foregroundColor: Theme.text,
-                    .backgroundColor: Theme.codeBackground
+                    .foregroundColor: Theme.codeText,
+                    .backgroundColor: Theme.codeBlockBackground
                 ], range: lineRange)
             } else {
                 styleBlock(storage, line: line, lineRange: lineRange)
@@ -300,13 +300,13 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         for range in codeRanges {
             guard let m = Self.codeSpanRx.firstMatch(in: line, range: range) else { continue }
             let element = range.shifted(by: offset)
+            // Pas de fond ici : la fonte monospace et le vert suffisent, et un
+            // rectangle coloré au milieu d'une phrase alourdit la lecture.
             storage.addAttributes([
                 .font: Theme.mono(),
-                .foregroundColor: Theme.codeText,
-                .backgroundColor: Theme.codeBackground
+                .foregroundColor: Theme.codeText
             ], range: element)
-            // Les accents graves disparaissent, le fond coloré suffit à signaler
-            // qu'il s'agit de code.
+            // Les accents graves disparaissent.
             let ticks = m.range(at: 1).length
             hide(NSRange(location: element.location, length: ticks), element: element)
             hide(NSRange(location: element.upperBound - ticks, length: ticks), element: element)

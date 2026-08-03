@@ -7,7 +7,7 @@ Un éditeur Markdown **natif** et *volontairement simple* pour macOS.
 Le texte que vous lisez est le fichier `.md` lui-même : les marqueurs restent là,
 ils sont juste affichés en gris discret. Vous pouvez taper dedans normalement.
 
-### Deux modes
+### Deux moudes
 
 - **Mise en page** — les titres sont gros, le gras est gras
 - **Texte brut** — tout en monospace, aucune coloration
