@@ -22,8 +22,8 @@ ils sont juste affichés en gris discret. Vous pouvez taper dedans normalement.
 
 > Les citations passent en italique, décalées vers la droite.
 
-- [ ] Une case à cocher
-- [x] Une case cochée
+- [x] Une case à cocher
+- [ ] Une case cochée
 
 ```swift
 // Dans un bloc de code, rien n'est réinterprété :

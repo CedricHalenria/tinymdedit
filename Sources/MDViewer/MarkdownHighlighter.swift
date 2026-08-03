@@ -22,10 +22,20 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         let element: NSRange
     }
 
+    /// Un caractère du document à dessiner sous une autre forme : le tiret d'une
+    /// liste devient « • », l'espace d'un `[ ]` devient « ☐ ». Le document, lui,
+    /// n'est pas touché. Si `element` est renseigné, la substitution est annulée
+    /// quand le curseur y entre, pour qu'on retrouve la syntaxe éditable.
+    struct GlyphSubstitution {
+        let range: NSRange
+        let character: Character
+        let element: NSRange?
+    }
+
     /// Marqueurs masquables relevés lors de la dernière passe complète.
     private(set) var hiddenMarkers: [MarkerRange] = []
-    /// Tirets de liste à remplacer visuellement par une puce « • ».
-    private(set) var bulletMarkers: [NSRange] = []
+    /// Caractères à redessiner autrement.
+    private(set) var substitutions: [GlyphSubstitution] = []
     /// `false` quand la dernière passe était partielle : les plages relevées sont
     /// alors incomplètes et le masquage doit être désactivé.
     private(set) var markersAreComplete = false
@@ -88,7 +98,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     /// Restyle l'intégralité du document et relève les marqueurs masquables.
     func rehighlight(_ storage: NSTextStorage) {
         hiddenMarkers.removeAll(keepingCapacity: true)
-        bulletMarkers.removeAll(keepingCapacity: true)
+        substitutions.removeAll(keepingCapacity: true)
         collecting = isStyled
         markersAreComplete = isStyled
         rehighlight(storage, in: NSRange(location: 0, length: storage.length))
@@ -129,12 +139,16 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             let line = ns.substring(with: lineRange)
 
             if Self.fenceRx.firstMatch(in: line, range: line.fullRange) != nil {
-                // La ligne de délimitation elle-même (``` ou ~~~).
+                // La ligne de délimitation (``` ou ~~~, avec son éventuel nom de
+                // langage) s'efface : le fond coloré signale déjà le bloc, et la
+                // ligne devenue vide lui tient lieu de marge intérieure.
                 storage.addAttributes([
                     .font: Theme.mono(),
                     .foregroundColor: Theme.marker,
                     .backgroundColor: Theme.codeBlockBackground
                 ], range: lineRange)
+                let fence = contentRange(of: line, in: lineRange)
+                hide(fence, element: fence)
                 insideFence.toggle()
             } else if insideFence {
                 storage.addAttributes([
@@ -158,6 +172,10 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     private func styleBlock(_ storage: NSTextStorage, line: String, lineRange: NSRange) {
         let full = line.fullRange
         let offset = lineRange.location
+        // L'élément d'un bloc s'arrête avant le saut de ligne : sinon, poser le
+        // curseur au début de la ligne suivante révélerait les marqueurs du bloc
+        // précédent — un « # » qui réapparaît quand on clique sous un titre.
+        let element = contentRange(of: line, in: lineRange)
         // Zone de contenu sur laquelle on cherchera ensuite les styles en ligne.
         var inlineScope = full
 
@@ -174,7 +192,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             // « # » et l'espace qui suit disparaissent : la hiérarchie est déjà
             // portée par la taille du titre.
             hide(NSRange(location: 0, length: m.range(at: 2).upperBound).shifted(by: offset),
-                 element: lineRange)
+                 element: element)
             inlineScope = m.range(at: 3)
 
         } else if let m = Self.quoteRx.firstMatch(in: line, range: full) {
@@ -185,7 +203,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             ], range: lineRange)
             storage.addAttribute(.foregroundColor, value: Theme.accent,
                                  range: m.range(at: 1).shifted(by: offset))
-            hide(m.range.shifted(by: offset), element: lineRange)
+            hide(m.range.shifted(by: offset), element: element)
             inlineScope = NSRange(location: m.range.length, length: full.length - m.range.length)
 
         } else if Self.ruleRx.firstMatch(in: line, range: full) != nil {
@@ -202,16 +220,31 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
                                  value: Theme.paragraph(headIndent: indent, spacingAfter: 3),
                                  range: lineRange)
             let bullet = m.range(at: 2)
-            storage.addAttribute(.foregroundColor, value: Theme.accent,
-                                 range: bullet.shifted(by: offset))
-            // Une puce de liste n'est pas une décoration syntaxique : elle porte
-            // du sens. On ne la masque donc pas, on remplace juste `-` par « • ».
-            if bullet.length == 1, collecting {
-                bulletMarkers.append(bullet.shifted(by: offset))
-            }
+
             if let task = Self.taskRx.firstMatch(in: line, range: full) {
-                storage.addAttribute(.foregroundColor, value: Theme.marker,
-                                     range: task.range(at: 1).shifted(by: offset))
+                // Case à cocher : le tiret de liste et les crochets disparaissent,
+                // seule la case reste — c'est elle qui porte l'information.
+                let brackets = task.range(at: 1)
+                let inner = NSRange(location: brackets.location + 1, length: 1)
+                let isChecked = (line as NSString).substring(with: inner).lowercased() == "x"
+
+                storage.addAttribute(.font, value: Theme.symbol, range: inner.shifted(by: offset))
+                hide(NSRange(location: bullet.location,
+                             length: brackets.location - bullet.location).shifted(by: offset),
+                     element: element)
+                hide(NSRange(location: brackets.location, length: 1).shifted(by: offset),
+                     element: element)
+                hide(NSRange(location: brackets.upperBound - 1, length: 1).shifted(by: offset),
+                     element: element)
+                substitute(inner.shifted(by: offset),
+                           with: isChecked ? Theme.checkedBox : Theme.uncheckedBox,
+                           element: element)
+
+            } else if bullet.length == 1 {
+                // Une puce porte du sens : on ne la masque pas, on la dessine
+                // simplement en « • » plutôt qu'en tiret. Elle n'est jamais
+                // révélée, `-` et `•` désignant la même chose pour le lecteur.
+                substitute(bullet.shifted(by: offset), with: Theme.bullet, element: nil)
             }
             inlineScope = NSRange(location: m.range.length, length: full.length - m.range.length)
         }
@@ -326,6 +359,24 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     private func hide(_ marker: NSRange, element: NSRange) {
         guard collecting, marker.length > 0 else { return }
         hiddenMarkers.append(MarkerRange(marker: marker, element: element))
+    }
+
+    /// Enregistre un caractère à redessiner sous une autre forme.
+    private func substitute(_ range: NSRange, with character: Character, element: NSRange?) {
+        guard collecting, range.length == 1 else { return }
+        substitutions.append(GlyphSubstitution(range: range, character: character, element: element))
+    }
+
+    /// La ligne sans son saut de ligne final.
+    private func contentRange(of line: String, in lineRange: NSRange) -> NSRange {
+        let ns = line as NSString
+        var length = ns.length
+        while length > 0 {
+            let character = ns.character(at: length - 1)
+            guard character == 0x0A || character == 0x0D else { break }
+            length -= 1
+        }
+        return NSRange(location: lineRange.location, length: length)
     }
 
     /// Détermine si un bloc de code est ouvert juste avant `location`, en comptant

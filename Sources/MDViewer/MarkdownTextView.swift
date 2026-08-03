@@ -126,7 +126,7 @@ struct MarkdownTextView: NSViewRepresentable {
         private func syncVisibility() {
             visibility.update(
                 markers: highlighter.hiddenMarkers,
-                bullets: highlighter.bulletMarkers,
+                substitutions: highlighter.substitutions,
                 enabled: highlighter.isStyled && highlighter.markersAreComplete
             )
         }

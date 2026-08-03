@@ -34,6 +34,19 @@ enum Theme {
         .monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
+    /// La fonte système ne contient pas ☐ (U+2610). Apple Symbols, si — et avec
+    /// ☑ à la même largeur, ce qui garantit que cocher une case ne décale rien.
+    private static let symbolFont = NSFont(name: "Apple Symbols", size: bodySize)
+
+    /// Fonte à appliquer au caractère qui porte une case à cocher.
+    static var symbol: NSFont { symbolFont ?? body }
+
+    /// Case vide — repli sur le carré générique si Apple Symbols manquait.
+    static var uncheckedBox: Character { symbolFont != nil ? "☐" : "□" }
+    static let checkedBox: Character = "☑"
+    /// Puce des listes à puces.
+    static let bullet: Character = "•"
+
     /// Taille des titres `#` à `######`.
     static func heading(_ level: Int) -> NSFont {
         let sizes: [CGFloat] = [27, 23, 20, 18, 16, 15]

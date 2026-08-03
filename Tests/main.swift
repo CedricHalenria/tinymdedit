@@ -7,8 +7,11 @@ let sample = """
 # Titre 1
 Du texte avec du **gras** et de l'*italique* et du `code`.
 - item de liste
+1. item numéroté
+- [ ] tâche à faire
+- [x] tâche finie
 > citation
-```
+```swift
 bloc **non** interprété
 ```
 [lien](https://exemple.fr)
@@ -43,7 +46,8 @@ check("code en ligne monospace", font("`code`", 1).isFixedPitch)
 check("code en ligne en vert", color("`code`", 1) == Theme.codeText)
 check("code en ligne sans fond", attrs("`code`", 1)[.backgroundColor] == nil)
 check("bloc de code avec fond", attrs("bloc **non**")[.backgroundColor] != nil)
-check("puce en couleur d'accent", color("- item") == Theme.accent)
+check("puce sans couleur particulière", color("- item") == Theme.text)
+check("numéro sans couleur particulière", color("1. item") == Theme.text)
 check("citation en italique", font("citation").fontDescriptor.symbolicTraits.contains(.italic))
 check("bloc de code monospace", font("bloc **non**").isFixedPitch)
 check("gras NON interprété dans le bloc", !font("**non**", 2).fontDescriptor.symbolicTraits.contains(.bold))
@@ -52,7 +56,11 @@ check("texte courant normal", font("Du texte").pointSize == Theme.bodySize)
 
 print("\nMASQUAGE DES MARQUEURS — curseur à l'écart")
 let visibility = MarkerVisibilityController()
-visibility.update(markers: hl.hiddenMarkers, bullets: hl.bulletMarkers, enabled: hl.markersAreComplete)
+visibility.update(markers: hl.hiddenMarkers, substitutions: hl.substitutions,
+                  enabled: hl.markersAreComplete)
+func substitution(_ index: Int) -> Character? {
+    hl.substitutions.first { $0.range.location == index }?.character
+}
 // Curseur sur du texte courant, à l'écart de tout élément : rien ne doit être révélé.
 // (Attention : les bornes de révélation sont inclusives, poser le curseur en fin
 // de document révélerait le dernier élément — ici le lien.)
@@ -73,12 +81,29 @@ check("URL du lien masquée", visibility.isHidden(at("https://exemple.fr")))
 check("libellé du lien visible", !visibility.isHidden(at("lien]")))
 check("« > » de citation masqué", visibility.isHidden(at("> citation")))
 check("tiret de liste NON masqué (devient une puce)", !visibility.isHidden(at("- item")))
-check("puce relevée pour substitution", hl.bulletMarkers.contains { $0.location == at("- item") })
+check("tiret dessiné en « • »", substitution(at("- item")) == "•")
+
+print("\nBLOCS DE CODE ET CASES À COCHER")
+check("« ```swift » masqué", visibility.isHidden(at("```swift")) && visibility.isHidden(at("```swift", 5)))
+check("« ``` » de fermeture masqué", visibility.isHidden(at("```\n[lien]")))
+check("contenu du bloc visible", !visibility.isHidden(at("bloc **non**")))
+check("tiret de la tâche masqué", visibility.isHidden(at("- [ ]")))
+check("crochets de la tâche masqués",
+      visibility.isHidden(at("[ ] tâche")) && visibility.isHidden(at("[ ] tâche", 2)))
+check("case vide dessinée en ☐", substitution(at("[ ] tâche", 1)) == Theme.uncheckedBox)
+check("case cochée dessinée en ☑", substitution(at("[x] tâche", 1)) == Theme.checkedBox)
+check("case à la fonte Apple Symbols", (attrs("[ ] tâche", 1)[.font] as? NSFont)?.fontName == Theme.symbol.fontName)
+check("libellé de la tâche visible", !visibility.isHidden(at("tâche à faire")))
 
 print("\nRÉVÉLATION AU CURSEUR")
 visibility.setSelection(NSRange(location: at("Titre 1"), length: 0))
 check("curseur dans le titre → « # » réapparaît", !visibility.isHidden(at("# Titre")))
 check("… sans révéler le gras plus bas", visibility.isHidden(at("**gras**")))
+
+// Régression : l'élément d'un bloc ne doit pas inclure son saut de ligne, sinon
+// cliquer sous un titre ferait réapparaître son « # ».
+visibility.setSelection(NSRange(location: at("Du texte"), length: 0))
+check("curseur sous le titre → « # » reste masqué", visibility.isHidden(at("# Titre")))
 
 visibility.setSelection(NSRange(location: at("**gras**", 3), length: 0))
 check("curseur dans le gras → « ** » réapparaît", !visibility.isHidden(at("**gras**")))
@@ -87,10 +112,23 @@ check("… et le titre se remasque", visibility.isHidden(at("# Titre")))
 visibility.setSelection(NSRange(location: at("**gras**"), length: 0))
 check("curseur collé avant le gras → révélé aussi", !visibility.isHidden(at("**gras**")))
 
+visibility.setSelection(NSRange(location: at("tâche à faire"), length: 0))
+check("curseur dans la tâche → crochets réapparaissent", !visibility.isHidden(at("[ ] tâche")))
+check("… et la case redevient l'espace d'origine", !visibility.isSubstituted(at("[ ] tâche", 1)))
+check("… sans toucher à l'autre tâche", visibility.isSubstituted(at("[x] tâche", 1)))
+
+visibility.setSelection(NSRange(location: at("bloc **non**"), length: 0))
+check("curseur dans le code → « ```swift » reste masqué", visibility.isHidden(at("```swift")))
+visibility.setSelection(NSRange(location: at("```swift", 4), length: 0))
+check("curseur sur la délimitation → elle réapparaît", !visibility.isHidden(at("```swift")))
+
+visibility.setSelection(NSRange(location: at("avec"), length: 0))
+check("puce toujours dessinée, curseur où qu'il soit", visibility.isSubstituted(at("- item")))
+
 print("\nMODE TEXTE BRUT")
 hl.isStyled = false
 hl.rehighlight(storage)
-visibility.update(markers: hl.hiddenMarkers, bullets: hl.bulletMarkers,
+visibility.update(markers: hl.hiddenMarkers, substitutions: hl.substitutions,
                   enabled: hl.isStyled && hl.markersAreComplete)
 check("tout en monospace", font("Titre 1").isFixedPitch && font("gras").isFixedPitch)
 check("aucune coloration", color("# Titre") == Theme.text && color("lien") == Theme.text)

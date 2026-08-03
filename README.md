@@ -45,25 +45,26 @@ voulez la garder.
 | `*italique*`, `_italique_` | italique |
 | `***gras italique***` | les deux |
 | `~~barré~~` | barré |
-| `` `code` `` | monospace sur fond coloré |
-| ``` ```bloc``` ``` | bloc monospace, contenu non réinterprété |
+| `` `code` `` | monospace vert terminal, sans fond |
+| ``` ```bloc``` ``` | bloc monospace sur fond discret, délimiteurs masqués |
 | `> citation` | italique, décalé |
-| `-`, `*`, `+`, `1.` | listes, puce en couleur d'accent, retrait suspendu |
-| `- [ ]`, `- [x]` | cases à cocher |
+| `-`, `*`, `+`, `1.` | listes à retrait suspendu, tiret dessiné en « • » |
+| `- [ ]`, `- [x]` | vraies cases ☐ / ☑ |
 | `[texte](url)` | libellé souligné, URL en retrait visuel |
 | `<https://…>` | lien automatique |
 | `---`, `***` | filet horizontal |
 
 ## Architecture
 
-Quatre fichiers, aucune dépendance externe.
+Cinq fichiers, aucune dépendance externe.
 
 | Fichier | Rôle |
 |---|---|
 | `MDViewerApp.swift` | le `DocumentGroup` : ouverture, enregistrement, fenêtres, menus |
 | `MarkdownDocument.swift` | le document — une `String`, rien de plus |
 | `MarkdownTextView.swift` | pont SwiftUI ↔ `NSTextView` |
-| `MarkdownHighlighter.swift` | le moteur : pose les attributs de style sur le texte source |
+| `MarkdownHighlighter.swift` | le moteur : pose les attributs de style et relève les marqueurs |
+| `MarkerVisibility.swift` | masque les marqueurs à l'écran et dessine puces et cases à cocher |
 | `Theme.swift` | fontes, couleurs, métriques — tout le rendu se règle ici |
 
 Le moteur est un `NSTextStorageDelegate` : à chaque frappe, il repose les attributs
