@@ -23,11 +23,16 @@ monospace uniforme, aucune coloration, le fichier tel qu'il est.
 
 ```sh
 brew tap CedricHalenria/tap
+brew trust CedricHalenria/tap
 brew install --cask tinymdedit
 ```
 
-C'est la voie la plus simple : Homebrew lève lui-même la mise en quarantaine, et
-`brew upgrade` suffit ensuite à mettre à jour.
+C'est la voie la plus simple : Homebrew n'applique pas la mise en quarantaine,
+l'app s'ouvre donc directement, et `brew upgrade --cask tinymdedit` suffit
+ensuite à mettre à jour.
+
+L'étape `brew trust` est exigée depuis Homebrew 6 pour tout cask provenant d'un
+tap tiers ; elle n'est à faire qu'une fois.
 
 ### Par téléchargement direct
 

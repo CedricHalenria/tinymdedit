@@ -67,5 +67,6 @@ jobs:
 
             ```sh
             brew tap CedricHalenria/tap
+            brew trust CedricHalenria/tap
             brew install --cask tinymdedit
             ```
