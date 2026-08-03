@@ -52,6 +52,20 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     /// positions décalées : la vue doit y redemander la génération des glyphes.
     private(set) var lastEditLocation: Int?
 
+    /// Position du curseur, que la vue tient à jour. Une ligne de délimitation de
+    /// bloc de code est réduite à une bande fine tant qu'elle est masquée, et
+    /// reprend sa hauteur normale quand le curseur s'y pose — sans quoi le texte
+    /// révélé serait tronqué.
+    var caretLocation: Int = -1
+
+    /// Lignes de délimitation des blocs de code relevées à la dernière passe.
+    private(set) var fenceLines: [NSRange] = []
+
+    /// Le curseur est-il posé sur une ligne de délimitation ?
+    func isOnFence(_ location: Int) -> Bool {
+        fenceLines.contains { location >= $0.location && location <= $0.upperBound }
+    }
+
     // MARK: - Expressions régulières
 
     private static func rx(_ pattern: String) -> NSRegularExpression {
@@ -104,6 +118,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     func rehighlight(_ storage: NSTextStorage) {
         hiddenMarkers.removeAll(keepingCapacity: true)
         substitutions.removeAll(keepingCapacity: true)
+        fenceLines.removeAll(keepingCapacity: true)
         collecting = isStyled
         markersAreComplete = isStyled
         rehighlight(storage, in: NSRange(location: 0, length: storage.length))
@@ -146,15 +161,23 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
 
             if let fenceMatch = Self.fenceRx.firstMatch(in: line, range: line.fullRange) {
                 // La ligne de délimitation (``` ou ~~~, avec son éventuel nom de
-                // langage) s'efface : le fond coloré signale déjà le bloc, et la
-                // ligne devenue vide lui tient lieu de marge intérieure.
+                // langage) s'efface, et sa hauteur est réduite à une bande fine :
+                // le fond coloré signale déjà le bloc, la bande lui tient lieu de
+                // marge intérieure. Le curseur posé dessus la rouvre à sa taille
+                // normale, pour pouvoir changer le langage.
+                let fence = contentRange(of: line, in: lineRange)
+                let hasCaret = caretLocation >= fence.location && caretLocation <= fence.upperBound
+                let closing = insideFence
                 storage.addAttributes([
                     .font: Theme.mono(),
                     .foregroundColor: Theme.marker,
-                    .backgroundColor: Theme.codeBlockBackground
+                    .backgroundColor: Theme.codeBlockBackground,
+                    .paragraphStyle: hasCaret
+                        ? Theme.codeParagraph
+                        : Theme.collapsedFenceParagraph(spacingAfter: closing ? 10 : 0)
                 ], range: lineRange)
-                let fence = contentRange(of: line, in: lineRange)
                 hide(fence, element: fence)
+                if collecting { fenceLines.append(fence) }
                 // Le mot qui suit les accents graves choisit le jeu de règles de
                 // coloration ; la ligne de fermeture, elle, referme le bloc.
                 language = insideFence
@@ -166,7 +189,8 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
                 storage.addAttributes([
                     .font: Theme.mono(),
                     .foregroundColor: Theme.codeText,
-                    .backgroundColor: Theme.codeBlockBackground
+                    .backgroundColor: Theme.codeBlockBackground,
+                    .paragraphStyle: Theme.codeParagraph
                 ], range: lineRange)
                 CodeHighlighter.style(storage, line: line, lineRange: lineRange,
                                       language: language, inBlockComment: &inBlockComment)

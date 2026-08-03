@@ -135,6 +135,31 @@ check("curseur sur la délimitation → elle réapparaît", !visibility.isHidden
 visibility.setSelection(NSRange(location: at("avec"), length: 0))
 check("puce toujours dessinée, curseur où qu'il soit", visibility.isSubstituted(at("- item")))
 
+print("\nGÉOMÉTRIE DU BLOC DE CODE")
+func paragraph(_ needle: String, _ o: Int = 0) -> NSParagraphStyle {
+    attrs(needle, o)[.paragraphStyle] as! NSParagraphStyle
+}
+check("délimitation réduite à une bande fine",
+      paragraph("```swift").maximumLineHeight == Theme.fencePadding)
+check("bande jointive au code (aucun espacement)",
+      paragraph("```swift").paragraphSpacing == 0)
+check("lignes de code jointives entre elles",
+      paragraph("// bloc").paragraphSpacing == 0 && paragraph("// bloc").paragraphSpacingBefore == 0)
+check("lignes de code à hauteur normale",
+      paragraph("// bloc").maximumLineHeight == 0)
+check("séparation après le bloc", paragraph("```\n[lien]").paragraphSpacing > 0)
+check("deux délimitations relevées", hl.fenceLines.count == 2)
+
+// Le curseur posé sur la délimitation lui rend sa hauteur, sinon le texte
+// révélé serait tronqué par la bande de 7 points.
+let fenceCaret = MarkdownHighlighter()
+let fenceStorage = NSTextStorage(string: sample)
+fenceStorage.delegate = fenceCaret
+fenceCaret.caretLocation = (sample as NSString).range(of: "```swift").location + 2
+fenceCaret.rehighlight(fenceStorage)
+let openedFence = fenceStorage.attributes(at: fenceCaret.caretLocation, effectiveRange: nil)[.paragraphStyle] as! NSParagraphStyle
+check("curseur sur la délimitation → hauteur rendue", openedFence.maximumLineHeight == 0)
+
 print("\nÉDITION — les marqueurs suivent le décalage")
 // Régression : insérer un caractère décale tout ce qui suit. Le relevé doit
 // suivre — et la vue redemander la génération des glyphes jusqu'à la fin du

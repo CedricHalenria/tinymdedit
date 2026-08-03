@@ -121,6 +121,30 @@ enum Theme {
         return style
     }
 
+    /// Hauteur de la bande qui tient lieu de marge en haut et en bas d'un bloc.
+    static let fencePadding: CGFloat = 7
+
+    /// Ligne de code : jointive à la suivante, sans espacement de paragraphe,
+    /// pour que le fond du bloc forme une surface continue.
+    static var codeParagraph: NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineHeightMultiple = 1.15
+        style.paragraphSpacing = 0
+        style.paragraphSpacingBefore = 0
+        return style
+    }
+
+    /// Ligne de délimitation dont le texte est masqué : réduite à une bande fine
+    /// qui prolonge le fond du bloc et lui sert de marge intérieure.
+    static func collapsedFenceParagraph(spacingAfter: CGFloat = 0) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.minimumLineHeight = fencePadding
+        style.maximumLineHeight = fencePadding
+        style.paragraphSpacing = spacingAfter
+        style.paragraphSpacingBefore = 0
+        return style
+    }
+
     /// Style de paragraphe du mode texte brut : compact, sans fioriture.
     static var rawParagraph: NSParagraphStyle {
         let style = NSMutableParagraphStyle()

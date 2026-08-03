@@ -115,15 +115,28 @@ struct MarkdownTextView: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = textView else { return }
             let previous = visibility.selection
-            // Rien à faire si le déplacement du curseur ne change pas ce qui est masqué.
-            guard visibility.setSelection(textView.selectedRange()) else { return }
+            let selection = textView.selectedRange()
+
+            // Entrer ou sortir d'une ligne de délimitation change sa hauteur :
+            // c'est un attribut, donc une passe de stylage complète.
+            let wasOnFence = highlighter.isOnFence(previous.location)
+            let isOnFence = highlighter.isOnFence(selection.location)
+            highlighter.caretLocation = selection.location
+            if wasOnFence != isOnFence {
+                restyle()
+                return
+            }
+
+            // Sinon, rien à faire si le déplacement ne change pas ce qui est masqué.
+            guard visibility.setSelection(selection) else { return }
             invalidateGlyphs(around: previous)
-            invalidateGlyphs(around: textView.selectedRange())
+            invalidateGlyphs(around: selection)
         }
 
         /// Force une passe de stylage complète (changement de mode, texte remplacé).
         func restyle() {
             guard let textView, let storage = textView.textStorage else { return }
+            highlighter.caretLocation = textView.selectedRange().location
             highlighter.rehighlight(storage)
             visibility.setSelection(textView.selectedRange())
             syncVisibility()
