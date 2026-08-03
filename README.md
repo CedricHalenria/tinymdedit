@@ -58,9 +58,17 @@ L'app est produite dans `build/TinyMDEdit.app`.
 ```sh
 ./build.sh             # build release
 ./build.sh --debug     # build debug
+./build.sh --run       # build puis lance l'app
+./build.sh --register  # fait de cette copie l'app par défaut des .md
 ./test.sh              # banc d'essai du moteur de stylage
 ./Tools/make-icon.sh   # régénère l'icône
 ```
+
+La compilation **n'inscrit pas** sa copie auprès de Launch Services. Sans cela,
+un exemplaire de développement disputerait l'ouverture des `.md` à celui installé
+dans `/Applications` : deux bundles de même identifiant, et macOS choisit seul
+lequel répond au double-clic. `--register` force l'inscription quand on veut
+travailler sur la copie locale.
 
 L'icône n'est pas un binaire livré tel quel : elle est **dessinée par du code**
 (`Tools/make-icon/main.swift`), donc lisible et modifiable comme le reste.
