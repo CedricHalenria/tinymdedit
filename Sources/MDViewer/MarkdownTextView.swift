@@ -102,7 +102,14 @@ struct MarkdownTextView: NSViewRepresentable {
             // Le highlighter vient de relever de nouveaux marqueurs pendant
             // `didProcessEditing` : on les transmet et on redemande les glyphes.
             syncVisibility()
-            invalidateGlyphs(around: textView.selectedRange())
+
+            // Depuis la modification jusqu'à la fin du document : insérer ou
+            // supprimer un caractère décale toutes les positions qui suivent, et
+            // les glyphes déjà calculés plus bas correspondraient alors aux
+            // anciennes positions — marqueurs masqués de travers.
+            guard let storage = textView.textStorage else { return }
+            let from = min(highlighter.lastEditLocation ?? 0, storage.length)
+            invalidateGlyphs(in: NSRange(location: from, length: storage.length - from))
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {

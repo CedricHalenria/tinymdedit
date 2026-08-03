@@ -71,10 +71,36 @@ enum Theme {
 
     /// Texte du code : vert terminal, décliné pour rester lisible sur fond clair
     /// comme sur fond sombre.
-    static let codeText = NSColor(name: "codeText") { appearance in
-        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.24, green: 0.83, blue: 0.32, alpha: 1)
-            : NSColor(srgbRed: 0.06, green: 0.45, blue: 0.13, alpha: 1)
+    static let codeText = dynamic(
+        dark: NSColor(srgbRed: 0.24, green: 0.83, blue: 0.32, alpha: 1),
+        light: NSColor(srgbRed: 0.06, green: 0.45, blue: 0.13, alpha: 1),
+        name: "codeText"
+    )
+
+    /// Coloration à l'intérieur des blocs de code. Le vert reste la couleur de
+    /// base ; ces teintes ne font qu'en détacher ce qui mérite de l'être.
+    static let codeComment = NSColor.secondaryLabelColor
+    static let codeString = dynamic(
+        dark: NSColor(srgbRed: 0.96, green: 0.72, blue: 0.36, alpha: 1),
+        light: NSColor(srgbRed: 0.64, green: 0.38, blue: 0.02, alpha: 1),
+        name: "codeString"
+    )
+    static let codeNumber = dynamic(
+        dark: NSColor(srgbRed: 0.45, green: 0.80, blue: 0.95, alpha: 1),
+        light: NSColor(srgbRed: 0.08, green: 0.42, blue: 0.62, alpha: 1),
+        name: "codeNumber"
+    )
+    static let codeKeyword = dynamic(
+        dark: NSColor(srgbRed: 0.85, green: 0.56, blue: 0.96, alpha: 1),
+        light: NSColor(srgbRed: 0.52, green: 0.18, blue: 0.68, alpha: 1),
+        name: "codeKeyword"
+    )
+
+    /// Couleur déclinée selon l'apparence claire ou sombre du système.
+    private static func dynamic(dark: NSColor, light: NSColor, name: NSColor.Name) -> NSColor {
+        NSColor(name: name) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        }
     }
 
     // MARK: - Paragraphes

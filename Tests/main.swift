@@ -12,7 +12,8 @@ Du texte avec du **gras** et de l'*italique* et du `code`.
 - [x] tâche finie
 > citation
 ```swift
-bloc **non** interprété
+// bloc **non** interprété
+let message = "Bonjour"  // 42 à la fin
 ```
 [lien](https://exemple.fr)
 """
@@ -49,8 +50,17 @@ check("bloc de code avec fond", attrs("bloc **non**")[.backgroundColor] != nil)
 check("puce sans couleur particulière", color("- item") == Theme.text)
 check("numéro sans couleur particulière", color("1. item") == Theme.text)
 check("citation en italique", font("citation").fontDescriptor.symbolicTraits.contains(.italic))
-check("bloc de code monospace", font("bloc **non**").isFixedPitch)
+check("bloc de code monospace", font("// bloc").isFixedPitch)
 check("gras NON interprété dans le bloc", !font("**non**", 2).fontDescriptor.symbolicTraits.contains(.bold))
+
+print("\nCOLORATION DU CODE")
+check("commentaire en gris", color("// bloc") == Theme.codeComment)
+check("commentaire en italique", font("// bloc").fontDescriptor.symbolicTraits.contains(.italic))
+check("mot-clé « let » coloré", color("let message") == Theme.codeKeyword)
+check("identifiant en vert de base", color("message =") == Theme.codeText)
+check("chaîne colorée", color("\"Bonjour\"") == Theme.codeString)
+check("commentaire de fin de ligne en gris", color("// 42") == Theme.codeComment)
+check("nombre dans un commentaire non recoloré", color("42 à la fin") == Theme.codeComment)
 check("libellé de lien en accent", color("lien") == Theme.accent)
 check("texte courant normal", font("Du texte").pointSize == Theme.bodySize)
 
@@ -86,7 +96,7 @@ check("tiret dessiné en « • »", substitution(at("- item")) == "•")
 print("\nBLOCS DE CODE ET CASES À COCHER")
 check("« ```swift » masqué", visibility.isHidden(at("```swift")) && visibility.isHidden(at("```swift", 5)))
 check("« ``` » de fermeture masqué", visibility.isHidden(at("```\n[lien]")))
-check("contenu du bloc visible", !visibility.isHidden(at("bloc **non**")))
+check("contenu du bloc visible", !visibility.isHidden(at("// bloc")))
 check("tiret de la tâche masqué", visibility.isHidden(at("- [ ]")))
 check("crochets de la tâche masqués",
       visibility.isHidden(at("[ ] tâche")) && visibility.isHidden(at("[ ] tâche", 2)))
@@ -117,13 +127,31 @@ check("curseur dans la tâche → crochets réapparaissent", !visibility.isHidde
 check("… et la case redevient l'espace d'origine", !visibility.isSubstituted(at("[ ] tâche", 1)))
 check("… sans toucher à l'autre tâche", visibility.isSubstituted(at("[x] tâche", 1)))
 
-visibility.setSelection(NSRange(location: at("bloc **non**"), length: 0))
+visibility.setSelection(NSRange(location: at("// bloc"), length: 0))
 check("curseur dans le code → « ```swift » reste masqué", visibility.isHidden(at("```swift")))
 visibility.setSelection(NSRange(location: at("```swift", 4), length: 0))
 check("curseur sur la délimitation → elle réapparaît", !visibility.isHidden(at("```swift")))
 
 visibility.setSelection(NSRange(location: at("avec"), length: 0))
 check("puce toujours dessinée, curseur où qu'il soit", visibility.isSubstituted(at("- item")))
+
+print("\nÉDITION — les marqueurs suivent le décalage")
+// Régression : insérer un caractère décale tout ce qui suit. Le relevé doit
+// suivre — et la vue redemander la génération des glyphes jusqu'à la fin du
+// document, sans quoi les marqueurs sont masqués aux anciennes positions.
+let edited = NSTextStorage(string: "# Titre\n- **gras** ici\n")
+let editedHighlighter = MarkdownHighlighter()
+edited.delegate = editedHighlighter
+editedHighlighter.rehighlight(edited)
+func openingBold(_ h: MarkdownHighlighter) -> Int? {
+    // Le « # » du titre fait lui aussi deux caractères : on ne garde que ce qui
+    // se trouve après la première ligne.
+    h.hiddenMarkers.first { $0.marker.length == 2 && $0.marker.location > 7 }?.marker.location
+}
+check("« ** » relevé avant édition", openingBold(editedHighlighter) == 10)
+edited.replaceCharacters(in: NSRange(location: 7, length: 0), with: "s")
+check("« ** » relevé après insertion", openingBold(editedHighlighter) == 11)
+check("position de l'édition mémorisée", editedHighlighter.lastEditLocation == 7)
 
 print("\nMODE TEXTE BRUT")
 hl.isStyled = false

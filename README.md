@@ -46,7 +46,7 @@ voulez la garder.
 | `***gras italique***` | les deux |
 | `~~barré~~` | barré |
 | `` `code` `` | monospace vert terminal, sans fond |
-| ``` ```bloc``` ``` | bloc monospace sur fond discret, délimiteurs masqués |
+| ``` ```bloc``` ``` | bloc sur fond discret, délimiteurs masqués, syntaxe colorée |
 | `> citation` | italique, décalé |
 | `-`, `*`, `+`, `1.` | listes à retrait suspendu, tiret dessiné en « • » |
 | `- [ ]`, `- [x]` | vraies cases ☐ / ☑ |
@@ -56,7 +56,7 @@ voulez la garder.
 
 ## Architecture
 
-Cinq fichiers, aucune dépendance externe.
+Six fichiers, aucune dépendance externe.
 
 | Fichier | Rôle |
 |---|---|
@@ -65,6 +65,7 @@ Cinq fichiers, aucune dépendance externe.
 | `MarkdownTextView.swift` | pont SwiftUI ↔ `NSTextView` |
 | `MarkdownHighlighter.swift` | le moteur : pose les attributs de style et relève les marqueurs |
 | `MarkerVisibility.swift` | masque les marqueurs à l'écran et dessine puces et cases à cocher |
+| `CodeHighlighter.swift` | coloration générique du contenu des blocs de code |
 | `Theme.swift` | fontes, couleurs, métriques — tout le rendu se règle ici |
 
 Le moteur est un `NSTextStorageDelegate` : à chaque frappe, il repose les attributs

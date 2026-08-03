@@ -48,6 +48,10 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     /// Vrai pendant une passe complète, quand on relève les marqueurs.
     private var collecting = false
 
+    /// Début de la dernière modification de caractères. Tout ce qui suit voit ses
+    /// positions décalées : la vue doit y redemander la génération des glyphes.
+    private(set) var lastEditLocation: Int?
+
     // MARK: - Expressions régulières
 
     private static func rx(_ pattern: String) -> NSRegularExpression {
@@ -58,7 +62,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
 
     // Blocs (appliqués ligne par ligne)
     private static let headingRx = rx(#"^(#{1,6})([ \t]+)(.*)$"#)
-    private static let fenceRx = rx(#"^[ \t]{0,3}(`{3,}|~{3,})"#)
+    private static let fenceRx = rx(#"^[ \t]{0,3}(`{3,}|~{3,})[ \t]*([A-Za-z0-9_+#.-]*)"#)
     private static let quoteRx = rx(#"^[ \t]{0,3}(>+)([ \t]?)"#)
     private static let listRx = rx(#"^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)"#)
     private static let ruleRx = rx(#"^[ \t]{0,3}((\*[ \t]*){3,}|(-[ \t]*){3,}|(_[ \t]*){3,})[ \t]*$"#)
@@ -84,6 +88,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         // On ne réagit qu'aux modifications de caractères : sans ce garde-fou,
         // nos propres changements d'attributs relanceraient la méthode en boucle.
         guard editedMask.contains(.editedCharacters) else { return }
+        lastEditLocation = editedRange.location
 
         if textStorage.length <= fullPassLimit {
             rehighlight(textStorage)
@@ -129,8 +134,9 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         guard isStyled else { return }
 
         // 2. On détermine si la zone démarre à l'intérieur d'un bloc de code
-        //    ouvert plus haut dans le document.
-        var insideFence = fenceIsOpen(before: range.location, in: ns)
+        //    ouvert plus haut dans le document, et dans quel langage.
+        var (insideFence, language) = openFence(before: range.location, in: ns)
+        var inBlockComment = false
 
         // 3. Puis on style ligne par ligne.
         var cursor = range.location
@@ -138,7 +144,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             let lineRange = ns.lineRange(for: NSRange(location: cursor, length: 0))
             let line = ns.substring(with: lineRange)
 
-            if Self.fenceRx.firstMatch(in: line, range: line.fullRange) != nil {
+            if let fenceMatch = Self.fenceRx.firstMatch(in: line, range: line.fullRange) {
                 // La ligne de délimitation (``` ou ~~~, avec son éventuel nom de
                 // langage) s'efface : le fond coloré signale déjà le bloc, et la
                 // ligne devenue vide lui tient lieu de marge intérieure.
@@ -149,6 +155,12 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
                 ], range: lineRange)
                 let fence = contentRange(of: line, in: lineRange)
                 hide(fence, element: fence)
+                // Le mot qui suit les accents graves choisit le jeu de règles de
+                // coloration ; la ligne de fermeture, elle, referme le bloc.
+                language = insideFence
+                    ? .unknown
+                    : CodeLanguage(tag: (line as NSString).substring(with: fenceMatch.range(at: 2)))
+                inBlockComment = false
                 insideFence.toggle()
             } else if insideFence {
                 storage.addAttributes([
@@ -156,6 +168,8 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
                     .foregroundColor: Theme.codeText,
                     .backgroundColor: Theme.codeBlockBackground
                 ], range: lineRange)
+                CodeHighlighter.style(storage, line: line, lineRange: lineRange,
+                                      language: language, inBlockComment: &inBlockComment)
             } else {
                 styleBlock(storage, line: line, lineRange: lineRange)
             }
@@ -379,23 +393,27 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         return NSRange(location: lineRange.location, length: length)
     }
 
-    /// Détermine si un bloc de code est ouvert juste avant `location`, en comptant
-    /// les délimiteurs rencontrés depuis le début du document. Utile quand on ne
-    /// restyle qu'une portion d'un très gros fichier.
-    private func fenceIsOpen(before location: Int, in ns: NSString) -> Bool {
-        guard location > 0 else { return false }
+    /// Détermine si un bloc de code est ouvert juste avant `location` — et dans
+    /// quel langage — en comptant les délimiteurs rencontrés depuis le début du
+    /// document. Utile quand on ne restyle qu'une portion d'un très gros fichier.
+    private func openFence(before location: Int, in ns: NSString) -> (Bool, CodeLanguage) {
+        guard location > 0 else { return (false, .unknown) }
         var open = false
+        var language = CodeLanguage.unknown
         var cursor = 0
         while cursor < location {
             let lineRange = ns.lineRange(for: NSRange(location: cursor, length: 0))
             let line = ns.substring(with: lineRange)
-            if Self.fenceRx.firstMatch(in: line, range: line.fullRange) != nil {
+            if let match = Self.fenceRx.firstMatch(in: line, range: line.fullRange) {
+                language = open
+                    ? .unknown
+                    : CodeLanguage(tag: (line as NSString).substring(with: match.range(at: 2)))
                 open.toggle()
             }
             cursor = NSMaxRange(lineRange)
             if lineRange.length == 0 { break }
         }
-        return open
+        return (open, language)
     }
 }
 

@@ -14,6 +14,7 @@ swiftc -O -o "$OUT/check" \
 	Tests/main.swift \
 	Sources/MDViewer/MarkdownHighlighter.swift \
 	Sources/MDViewer/Theme.swift \
-	Sources/MDViewer/MarkerVisibility.swift
+	Sources/MDViewer/MarkerVisibility.swift \
+	Sources/MDViewer/CodeHighlighter.swift
 
 "$OUT/check"
