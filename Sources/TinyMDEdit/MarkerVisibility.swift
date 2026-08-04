@@ -18,11 +18,15 @@ final class MarkerVisibilityController: NSObject, NSLayoutManagerDelegate {
 
     private var markers: [MarkdownHighlighter.MarkerRange] = []
     private var allSubstitutions: [MarkdownHighlighter.GlyphSubstitution] = []
+    private var allStops: [MarkdownHighlighter.ColumnStop] = []
 
     /// Index des caractères effectivement masqués et substitués, recalculés à
     /// chaque changement de texte ou de sélection.
     private var hidden = IndexSet()
     private var substituted: [Int: Character] = [:]
+    /// Barres de tableau actuellement remplacées par une avance, et l'abscisse
+    /// où chacune doit amener le texte qui la suit.
+    private var advances: [Int: CGFloat] = [:]
 
     private(set) var selection = NSRange(location: 0, length: 0)
     private var glyphCache: [String: CGGlyph] = [:]
@@ -32,10 +36,12 @@ final class MarkerVisibilityController: NSObject, NSLayoutManagerDelegate {
     func update(
         markers: [MarkdownHighlighter.MarkerRange],
         substitutions: [MarkdownHighlighter.GlyphSubstitution],
+        stops: [MarkdownHighlighter.ColumnStop] = [],
         enabled: Bool
     ) {
         self.markers = markers
         self.allSubstitutions = substitutions
+        self.allStops = stops
         self.isEnabled = enabled
         recompute()
     }
@@ -44,15 +50,17 @@ final class MarkerVisibilityController: NSObject, NSLayoutManagerDelegate {
     /// donc s'il faut redemander la génération des glyphes.
     @discardableResult
     func setSelection(_ range: NSRange) -> Bool {
-        let previous = hidden
+        let previousHidden = hidden
+        let previousAdvances = advances
         selection = range
         recompute()
-        return previous != hidden
+        return previousHidden != hidden || previousAdvances != advances
     }
 
     private func recompute() {
         var newHidden = IndexSet()
         var newSubstituted: [Int: Character] = [:]
+        var newAdvances: [Int: CGFloat] = [:]
 
         if isEnabled {
             for marker in markers where !reveals(marker.element) {
@@ -65,10 +73,17 @@ final class MarkerVisibilityController: NSObject, NSLayoutManagerDelegate {
                 if let element = substitution.element, reveals(element) { continue }
                 newSubstituted[substitution.range.location] = substitution.character
             }
+            // Une rangée de tableau où le curseur se pose retrouve ses barres, et
+            // donc sa syntaxe brute : l'alignement de la rangée cède le pas à son
+            // édition. Les autres rangées, elles, ne bougent pas d'un point.
+            for stop in allStops where !reveals(stop.element) {
+                newAdvances[stop.range.location] = stop.x
+            }
         }
 
         hidden = newHidden
         substituted = newSubstituted
+        advances = newAdvances
     }
 
     /// Le caractère à cet index est-il masqué à l'affichage ?
@@ -79,6 +94,12 @@ final class MarkerVisibilityController: NSObject, NSLayoutManagerDelegate {
     /// Le caractère à cet index est-il actuellement redessiné autrement ?
     func isSubstituted(_ characterIndex: Int) -> Bool {
         substituted[characterIndex] != nil
+    }
+
+    /// Abscisse jusqu'à laquelle la barre de tableau à cet index fait avancer le
+    /// texte, ou `nil` si ce caractère n'en est pas une.
+    func advance(at characterIndex: Int) -> CGFloat? {
+        advances[characterIndex]
     }
 
     /// Le curseur touche-t-il cet élément ? Les bornes sont inclusives, pour que
@@ -98,7 +119,7 @@ final class MarkerVisibilityController: NSObject, NSLayoutManagerDelegate {
         forGlyphRange glyphRange: NSRange
     ) -> Int {
         // 0 = « je ne fais rien de particulier, applique le comportement par défaut ».
-        guard isEnabled, !hidden.isEmpty || !substituted.isEmpty else { return 0 }
+        guard isEnabled, !hidden.isEmpty || !substituted.isEmpty || !advances.isEmpty else { return 0 }
 
         let count = glyphRange.length
         var newProps = Array(UnsafeBufferPointer(start: props, count: count))
@@ -109,6 +130,12 @@ final class MarkerVisibilityController: NSObject, NSLayoutManagerDelegate {
             let characterIndex = charIndexes[i]
             if hidden.contains(characterIndex) {
                 newProps[i] = .null
+                changed = true
+            } else if advances[characterIndex] != nil {
+                // Déclarer le glyphe « caractère de contrôle » nous donne la main
+                // sur son avance, plus bas : la barre cesse d'être un signe pour
+                // devenir la distance qui sépare deux colonnes.
+                newProps[i] = .controlCharacter
                 changed = true
             } else if let character = substituted[characterIndex],
                       let glyph = glyph(for: character, in: font) {
@@ -127,6 +154,35 @@ final class MarkerVisibilityController: NSObject, NSLayoutManagerDelegate {
             forGlyphRange: glyphRange
         )
         return count
+    }
+
+    /// Un caractère de contrôle déclaré ci-dessus : on demande qu'il se comporte
+    /// en blanc, c'est-à-dire qu'il occupe une largeur que nous fixons nous-mêmes.
+    func layoutManager(
+        _ layoutManager: NSLayoutManager,
+        shouldUse action: NSLayoutManager.ControlCharacterAction,
+        forControlCharacterAt charIndex: Int
+    ) -> NSLayoutManager.ControlCharacterAction {
+        advances[charIndex] != nil ? .whitespace : action
+    }
+
+    /// La largeur en question : de la position courante jusqu'au début de la
+    /// colonne suivante. Une rangée dont le texte a déjà dépassé cette abscisse —
+    /// cellule trop large, tableau plus large que la fenêtre — garde au moins une
+    /// gouttière minimale, pour que deux cellules ne se touchent jamais.
+    func layoutManager(
+        _ layoutManager: NSLayoutManager,
+        boundingBoxForControlGlyphAt glyphIndex: Int,
+        for textContainer: NSTextContainer,
+        proposedLineFragment proposedRect: NSRect,
+        glyphPosition: NSPoint,
+        characterIndex charIndex: Int
+    ) -> NSRect {
+        // `glyphPosition` se compte depuis le bord du texte, comme les abscisses
+        // des colonnes : la marge intérieure du conteneur n'entre pas en jeu.
+        let width = advances[charIndex]
+            .map { max(Theme.tableMinGutter, $0 - glyphPosition.x) } ?? 0
+        return NSRect(x: glyphPosition.x, y: 0, width: width, height: proposedRect.height)
     }
 
     /// Glyphe d'un caractère dans la fonte d'un fragment donné, mis en cache.

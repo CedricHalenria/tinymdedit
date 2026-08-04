@@ -98,10 +98,11 @@ n'installe jamais rien d'elle-même — elle ouvre la page de téléchargement.
 | `[texte](url)` | libellé souligné, URL en retrait visuel |
 | `<https://…>` | lien automatique |
 | `---`, `***` | filet horizontal |
+| `\| a \| b \|` + `\|---\|` | tableau : colonnes alignées, en-tête en gras, filet sous l'en-tête |
 
 ## Architecture
 
-Sept fichiers, aucune dépendance externe.
+Neuf fichiers, aucune dépendance externe.
 
 | Fichier | Rôle |
 |---|---|
@@ -110,9 +111,16 @@ Sept fichiers, aucune dépendance externe.
 | `MarkdownTextView.swift` | pont SwiftUI ↔ `NSTextView` |
 | `EditorTextView.swift` | la vue texte : clic sur les cases, barre des citations, colonne de lecture |
 | `MarkdownHighlighter.swift` | le moteur : pose les attributs de style et relève les marqueurs |
-| `MarkerVisibility.swift` | masque les marqueurs à l'écran et dessine puces et cases à cocher |
+| `MarkdownTable.swift` | l'analyse d'un tableau : découpe des lignes en cellules, alignements |
+| `MarkerVisibility.swift` | masque les marqueurs à l'écran, dessine puces et cases, aligne les colonnes |
 | `CodeHighlighter.swift` | coloration générique du contenu des blocs de code |
 | `Theme.swift` | fontes, couleurs, métriques — tout le rendu se règle ici |
+
+Les colonnes d'un tableau s'alignent sans qu'un seul espace soit ajouté au fichier :
+la largeur réellement occupée par chaque cellule est mesurée, puis chaque barre
+verticale est déclarée *caractère de contrôle* et sa largeur devient la distance qui
+reste à parcourir jusqu'à la colonne suivante. La ligne `|---|---|`, qui ne dit rien
+d'autre que l'alignement, est remplacée par un filet.
 
 Le moteur est un `NSTextStorageDelegate` : à chaque frappe, il repose les attributs
 d'affichage sur les paragraphes touchés. Il ne modifie **jamais** un caractère du

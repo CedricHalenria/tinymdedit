@@ -237,6 +237,165 @@ fenceCaret.rehighlight(fenceStorage)
 let openedFence = fenceStorage.attributes(at: fenceCaret.caretLocation, effectiveRange: nil)[.paragraphStyle] as! NSParagraphStyle
 check("curseur sur la délimitation → hauteur rendue", openedFence.maximumLineHeight == 0)
 
+print("\nTABLEAUX")
+// Trois alignements différents, du gras dans une cellule, et une ligne pleine de
+// barres qui n'est pas un tableau faute de ligne d'alignement.
+let tableSource = """
+Avant le tableau.
+
+| Brique | Détail | Version |
+|---|:---:|---:|
+| Thème | Astra **Pro** | 4.13.4 |
+| Extensions | Woo | 10 |
+
+Après. | ceci n'est pas un tableau |
+"""
+let table = NSTextStorage(string: tableSource)
+let tableHighlighter = MarkdownHighlighter()
+table.delegate = tableHighlighter
+tableHighlighter.rehighlight(table)
+
+let tns = tableSource as NSString
+func tAt(_ needle: String, _ o: Int = 0) -> Int { tns.range(of: needle).location + o }
+func tAttrs(_ needle: String, _ o: Int = 0) -> [NSAttributedString.Key: Any] {
+    table.attributes(at: tAt(needle, o), effectiveRange: nil)
+}
+func tFont(_ needle: String, _ o: Int = 0) -> NSFont { tAttrs(needle, o)[.font] as! NSFont }
+func tParagraph(_ needle: String, _ o: Int = 0) -> NSParagraphStyle {
+    tAttrs(needle, o)[.paragraphStyle] as! NSParagraphStyle
+}
+
+let tableVisibility = MarkerVisibilityController()
+tableVisibility.update(markers: tableHighlighter.hiddenMarkers,
+                       substitutions: tableHighlighter.substitutions,
+                       stops: tableHighlighter.columnStops,
+                       enabled: tableHighlighter.markersAreComplete)
+tableVisibility.setSelection(NSRange(location: tAt("Avant"), length: 0))
+
+/// Abscisse imposée par la barre qui ouvre la cellule où se trouve `needle`.
+func stopBefore(_ needle: String) -> CGFloat? {
+    var index = tAt(needle) - 1
+    while index > 0, tns.character(at: index) != 0x7C { index -= 1 }
+    return tableVisibility.advance(at: index)
+}
+
+check("en-tête en gras", tFont("Brique").fontDescriptor.symbolicTraits.contains(.bold))
+check("corps en graisse normale", !tFont("Thème").fontDescriptor.symbolicTraits.contains(.bold))
+check("gras interprété dans une cellule",
+      tFont("Pro**").fontDescriptor.symbolicTraits.contains(.bold))
+check("« ** » masqué dans une cellule", tableVisibility.isHidden(tAt("**Pro**")))
+check("rangées jointives", tParagraph("Thème").paragraphSpacing == 0)
+check("espacement après la dernière rangée", tParagraph("Extensions").paragraphSpacing > 0)
+
+check("ligne d'alignement réduite à une bande",
+      tParagraph("|---|").maximumLineHeight == Theme.tableRuleHeight)
+check("ligne d'alignement masquée", tableVisibility.isHidden(tAt("|---|")))
+check("un filet d'en-tête relevé", tableHighlighter.tableRules.count == 1)
+check("largeur du filet renseignée", (tableHighlighter.tableRules.first?.width ?? 0) > 0)
+
+check("barre de tête masquée", tableVisibility.isHidden(tAt("| Thème")))
+check("espace de remplissage masqué", tableVisibility.isHidden(tAt("| Thème", 1)))
+check("barre de queue masquée", tableVisibility.isHidden(tAt("4.13.4 |", 7)))
+check("barre intérieure convertie en avance", stopBefore("Détail") != nil)
+check("première colonne : toutes les rangées démarrent au bord",
+      [tAt("| Brique"), tAt("| Thème"), tAt("| Extensions")]
+          .allSatisfy { tableVisibility.isHidden($0) })
+check("colonne centrée : la cellule étroite démarre plus loin",
+      (stopBefore("Woo") ?? 0) > (stopBefore("Astra") ?? 0))
+check("colonne à droite : chaque cellule cale sa fin sur la colonne",
+      (stopBefore("10 |") ?? 0) > (stopBefore("4.13.4") ?? 0)
+          && (stopBefore("4.13.4") ?? 0) > (stopBefore("Version") ?? 0))
+
+// Sans ligne d'alignement, des barres verticales ne sont que des barres.
+check("texte à barres non transformé en tableau",
+      !tableVisibility.isHidden(tAt("| ceci")) && stopBefore("ceci") == nil)
+check("… et il garde le paragraphe courant",
+      tParagraph("Après.").paragraphSpacing == Theme.paragraph().paragraphSpacing)
+
+tableVisibility.setSelection(NSRange(location: tAt("Astra"), length: 0))
+check("curseur dans la rangée → les barres redeviennent des barres",
+      stopBefore("Astra") == nil && !tableVisibility.isHidden(tAt("| Thème")))
+check("… sans déplacer les autres rangées", stopBefore("Woo") != nil)
+
+// Le curseur sur la ligne d'alignement lui rend sa hauteur, comme à une
+// délimitation de bloc de code.
+let ruleCaret = MarkdownHighlighter()
+let ruleStorage = NSTextStorage(string: tableSource)
+ruleStorage.delegate = ruleCaret
+ruleCaret.caretLocation = tAt("|---|") + 2
+ruleCaret.rehighlight(ruleStorage)
+check("curseur sur la ligne d'alignement → hauteur rendue",
+      (ruleStorage.attributes(at: ruleCaret.caretLocation,
+                              effectiveRange: nil)[.paragraphStyle] as! NSParagraphStyle)
+          .maximumLineHeight == 0)
+check("ligne d'alignement reconnue comme réduite", ruleCaret.isOnCollapsedLine(tAt("|---|")))
+
+// Une colonne alignée à gauche amène toutes ses rangées exactement au même point,
+// quelle que soit la largeur de ce qui précède.
+let aligned = NSTextStorage(string: "| Un | x |\n|---|---|\n| Trois | yyyy |\n")
+let alignedHighlighter = MarkdownHighlighter()
+aligned.delegate = alignedHighlighter
+alignedHighlighter.rehighlight(aligned)
+let alignedStops = alignedHighlighter.columnStops.map(\.x)
+check("colonne à gauche : même abscisse sur toutes les rangées",
+      alignedStops.count == 2 && alignedStops[0] == alignedStops[1])
+check("l'abscisse tient compte de la cellule la plus large",
+      (alignedStops.first ?? 0) > 0)
+
+// Mise en page réelle : on assemble une pile TextKit et on relit l'abscisse à
+// laquelle le texte a effectivement été posé. C'est le seul moyen de vérifier
+// que la barre verticale, devenue caractère de contrôle, avance bien jusqu'à la
+// colonne — le reste ne teste que l'intention.
+print("\nTABLEAUX — mise en page réelle")
+let laidText = "Avant.\n\n| Un | x |\n|---|---|\n| Trois | yyyy |\n"
+let laid = NSTextStorage(string: laidText)
+let laidHighlighter = MarkdownHighlighter()
+laid.delegate = laidHighlighter
+let laidLayout = NSLayoutManager()
+laid.addLayoutManager(laidLayout)
+let laidContainer = NSTextContainer(size: CGSize(width: 600, height: 10_000))
+laidLayout.addTextContainer(laidContainer)
+let laidVisibility = MarkerVisibilityController()
+laidLayout.delegate = laidVisibility
+laidHighlighter.rehighlight(laid)
+laidVisibility.update(markers: laidHighlighter.hiddenMarkers,
+                      substitutions: laidHighlighter.substitutions,
+                      stops: laidHighlighter.columnStops,
+                      enabled: laidHighlighter.markersAreComplete)
+laidVisibility.setSelection(NSRange(location: 0, length: 0))
+laidLayout.ensureLayout(for: laidContainer)
+
+let lns = laidText as NSString
+func drawnX(_ needle: String) -> CGFloat {
+    let glyphs = laidLayout.glyphRange(forCharacterRange: lns.range(of: needle),
+                                       actualCharacterRange: nil)
+    return laidLayout.boundingRect(forGlyphRange: glyphs, in: laidContainer).minX
+}
+// Le conteneur pose le texte après une marge intérieure : les abscisses des
+// colonnes, elles, se comptent depuis le bord du texte.
+let padding = laidContainer.lineFragmentPadding
+check("première colonne posée au bord du texte",
+      abs(drawnX("Un") - padding) < 0.5 && abs(drawnX("Trois") - padding) < 0.5)
+check("deuxième colonne posée exactement à l'abscisse calculée",
+      abs(drawnX("x |") - padding - (laidHighlighter.columnStops.first?.x ?? 0)) < 0.5)
+check("deuxième colonne alignée d'une rangée à l'autre",
+      abs(drawnX("x |") - drawnX("yyyy")) < 0.5)
+
+// Découpage : barres facultatives aux extrémités, barre échappée conservée.
+let bare = "a | b\n--- | ---\nc | d\n" as NSString
+if let parsed = MarkdownTable.detect(in: bare, from: bare.lineRange(for: NSRange(location: 0, length: 0)),
+                                     limit: bare.length) {
+    check("tableau sans barres aux extrémités reconnu", parsed.columnCount == 2)
+    check("une rangée de corps", parsed.body.count == 1)
+    check("aucune barre de tête", parsed.header.leadingBar == nil)
+} else {
+    check("tableau sans barres aux extrémités reconnu", false)
+}
+let escaped = "| a \\| b | c |\n|---|---|\n" as NSString
+check("barre échappée non prise pour un séparateur",
+      MarkdownTable.detect(in: escaped, from: escaped.lineRange(for: NSRange(location: 0, length: 0)),
+                           limit: escaped.length)?.columnCount == 2)
+
 print("\nCOMPARAISON DE VERSIONS")
 check("version plus récente détectée", SemanticVersion.isNewer("0.2.0", than: "0.1.0"))
 check("version identique ignorée", !SemanticVersion.isNewer("0.1.0", than: "0.1.0"))

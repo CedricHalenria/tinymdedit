@@ -20,6 +20,10 @@ final class EditorTextView: NSTextView {
     /// Blocs de citation, pour la barre verticale tracée dans la marge.
     var quoteBlocks: () -> [NSRange] = { [] }
 
+    /// Filets d'en-tête de tableau, tracés dans la bande laissée par la ligne
+    /// d'alignement.
+    var tableRules: () -> [MarkdownHighlighter.TableRule] = { [] }
+
     // MARK: - Colonne de lecture
 
     /// Centre la colonne de texte et lui impose une largeur maximale : au-delà,
@@ -35,10 +39,11 @@ final class EditorTextView: NSTextView {
         }
     }
 
-    // MARK: - Barre des citations
+    // MARK: - Barre des citations et filets de tableau
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
+        drawTableRules(in: rect)
         Theme.quoteBar.setFill()
         for block in visible(quoteBlocks()) {
             guard var bar = boundingRect(for: block) else { continue }
@@ -51,6 +56,30 @@ final class EditorTextView: NSTextView {
                 xRadius: Theme.quoteBarWidth / 2,
                 yRadius: Theme.quoteBarWidth / 2
             ).fill()
+        }
+    }
+
+    /// Le filet qui sépare l'en-tête d'un tableau de son corps. Il prend la place
+    /// de la ligne `|---|---|`, effacée et réduite à une bande : la syntaxe
+    /// disparaît, ce qu'elle disait reste.
+    private func drawTableRules(in rect: NSRect) {
+        let rules = tableRules()
+        guard !rules.isEmpty else { return }
+        Theme.tableRule.setFill()
+        let visibleLines = visible(rules.map(\.header))
+        for rule in rules where visibleLines.contains(where: { NSEqualRanges($0, rule.header) }) {
+            // La ligne d'alignement n'a aucun glyphe dessiné : la mise en page ne
+            // sait rien en dire. On part donc du bas de l'en-tête, et on descend
+            // au milieu de la bande qu'elle occupe.
+            guard let header = boundingRect(for: rule.header) else { continue }
+            let line = NSRect(
+                x: textContainerOrigin.x + (textContainer?.lineFragmentPadding ?? 0),
+                y: (header.maxY + (Theme.tableRuleHeight - Theme.tableRuleWidth) / 2).rounded(),
+                width: rule.width,
+                height: Theme.tableRuleWidth
+            )
+            guard line.intersects(rect) else { continue }
+            line.fill()
         }
     }
 

@@ -32,10 +32,34 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         let element: NSRange?
     }
 
+    /// Une barre verticale de tableau à ne pas dessiner, mais à remplacer par une
+    /// avance jusqu'à l'abscisse `x` — comptée depuis le bord gauche du texte.
+    /// C'est ce qui aligne les colonnes sans ajouter un espace au fichier.
+    /// Comme les marqueurs, l'avance cesse quand le curseur entre dans `element`.
+    struct ColumnStop {
+        let range: NSRange
+        let x: CGFloat
+        let element: NSRange
+    }
+
+    /// Le filet qui sépare l'en-tête d'un tableau de son corps. Il prend la place
+    /// de la ligne `|---|---|`, masquée et réduite à une bande — mais c'est sur
+    /// l'en-tête qu'il s'ancre : une ligne dont aucun glyphe n'est dessiné n'a
+    /// pas de géométrie que la vue puisse interroger.
+    struct TableRule {
+        /// La ligne d'alignement : le filet ne se trace que si elle est masquée.
+        let element: NSRange
+        /// La ligne d'en-tête, sous laquelle le filet se pose.
+        let header: NSRange
+        let width: CGFloat
+    }
+
     /// Marqueurs masquables relevés lors de la dernière passe complète.
     private(set) var hiddenMarkers: [MarkerRange] = []
     /// Caractères à redessiner autrement.
     private(set) var substitutions: [GlyphSubstitution] = []
+    /// Barres de tableau à convertir en avance vers la colonne suivante.
+    private(set) var columnStops: [ColumnStop] = []
     /// `false` quand la dernière passe était partielle : les plages relevées sont
     /// alors incomplètes et le masquage doit être désactivé.
     private(set) var markersAreComplete = false
@@ -61,6 +85,10 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     /// Lignes de délimitation des blocs de code relevées à la dernière passe.
     private(set) var fenceLines: [NSRange] = []
 
+    /// Filets d'en-tête de tableau, que la vue trace dans la bande laissée par la
+    /// ligne d'alignement.
+    private(set) var tableRules: [TableRule] = []
+
     /// Caractères portant une case à cocher — celui entre les crochets d'un
     /// `[ ]` ou `[x]`. La vue s'en sert pour rendre les cases cliquables.
     private(set) var checkboxes: [NSRange] = []
@@ -69,9 +97,12 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     /// une barre verticale continue plutôt qu'un trait par ligne.
     private(set) var quoteBlocks: [NSRange] = []
 
-    /// Le curseur est-il posé sur une ligne de délimitation ?
-    func isOnFence(_ location: Int) -> Bool {
-        fenceLines.contains { location >= $0.location && location <= $0.upperBound }
+    /// Le curseur est-il posé sur une ligne réduite à une bande — délimitation de
+    /// bloc de code ou ligne d'alignement d'un tableau ? Y entrer lui rend sa
+    /// hauteur, sans quoi le texte révélé serait tronqué.
+    func isOnCollapsedLine(_ location: Int) -> Bool {
+        let lines = fenceLines + tableRules.map(\.element)
+        return lines.contains { location >= $0.location && location <= $0.upperBound }
     }
 
     // MARK: - Expressions régulières
@@ -97,6 +128,9 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     private static let listRx = rx(#"^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)"#)
     private static let ruleRx = rx(#"^[ \t]{0,3}((\*[ \t]*){3,}|(-[ \t]*){3,}|(_[ \t]*){3,})[ \t]*$"#)
     private static let taskRx = rx(#"^[ \t]*[-*+][ \t]+(\[[ xX]\])"#)
+    /// Une ligne déjà prise par un autre bloc n'ouvre jamais un tableau, quelles
+    /// que soient les barres verticales qu'elle contient.
+    private static let notATableRx = rx(#"^[ \t]{0,3}(#{1,6}[ \t]|>|([-*+]|\d{1,9}[.)])[ \t])"#)
 
     // Fragments en ligne
     private static let codeSpanRx = rx(#"(`+)([^`\n]|[^`\n].*?[^`\n])\1"#)
@@ -134,7 +168,9 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     func rehighlight(_ storage: NSTextStorage) {
         hiddenMarkers.removeAll(keepingCapacity: true)
         substitutions.removeAll(keepingCapacity: true)
+        columnStops.removeAll(keepingCapacity: true)
         fenceLines.removeAll(keepingCapacity: true)
+        tableRules.removeAll(keepingCapacity: true)
         checkboxes.removeAll(keepingCapacity: true)
         quoteBlocks.removeAll(keepingCapacity: true)
         collecting = isStyled
@@ -187,6 +223,17 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         while cursor < NSMaxRange(range) {
             let lineRange = ns.lineRange(for: NSRange(location: cursor, length: 0))
             let line = ns.substring(with: lineRange)
+
+            // Un tableau se traite d'un bloc : la largeur de ses colonnes se lit
+            // sur toutes ses lignes à la fois, jamais sur une seule.
+            if !insideFence, line.contains("|"),
+               Self.notATableRx.firstMatch(in: line, range: line.fullRange) == nil,
+               let table = MarkdownTable.detect(in: ns, from: lineRange, limit: NSMaxRange(range)) {
+                flushInline()
+                styleTable(storage, ns, table)
+                cursor = table.end
+                continue
+            }
 
             if let fenceMatch = Self.fenceRx.firstMatch(in: line, range: line.fullRange) {
                 flushInline()
@@ -375,6 +422,149 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         return (kind, inlineScope.shifted(by: offset))
     }
 
+    // MARK: - Tableaux
+
+    /// Style un tableau entier : en-tête en gras, rangées jointives, ligne
+    /// d'alignement réduite à un filet — et surtout, colonnes alignées.
+    ///
+    /// L'alignement ne doit rien à des espaces ajoutés au fichier : on mesure la
+    /// largeur réelle de chaque cellule une fois stylée, on en déduit l'abscisse
+    /// de chaque colonne, et chaque barre verticale devient une avance jusque-là.
+    private func styleTable(_ storage: NSTextStorage, _ ns: NSString, _ table: MarkdownTable) {
+        // Les marqueurs relevés à partir d'ici sont ceux du tableau : eux seuls
+        // comptent quand on mesure la largeur rendue d'une cellule.
+        let markerFloor = hiddenMarkers.count
+
+        // 1. Les rangées : fonte, géométrie, puis styles en ligne cellule par
+        //    cellule — une emphase ne traverse jamais une barre verticale.
+        for (index, row) in table.rows.enumerated() {
+            let isHeader = index == 0
+            storage.addAttributes([
+                .font: isHeader ? Theme.bodyBold : Theme.body,
+                .paragraphStyle: Theme.tableParagraph(
+                    spacingBefore: isHeader ? 6 : 0,
+                    spacingAfter: row.line.upperBound >= table.end ? 12 : 0
+                )
+            ], range: row.line)
+            for bar in row.bars {
+                storage.addAttribute(.foregroundColor, value: Theme.marker, range: bar)
+            }
+            for cell in row.cells where cell.content.length > 0 {
+                styleInline(storage, text: ns.substring(with: cell.content),
+                            offset: cell.content.location)
+            }
+        }
+
+        // 2. La ligne d'alignement : de la syntaxe pure, jamais du contenu. Elle
+        //    s'efface et se réduit à une bande où la vue trace le filet ; le
+        //    curseur posé dessus lui rend sa hauteur pour rester éditable.
+        let delimiter = table.delimiter
+        let hasCaret = caretLocation >= delimiter.element.location
+            && caretLocation <= delimiter.element.upperBound
+        storage.addAttributes([
+            .foregroundColor: Theme.marker,
+            .paragraphStyle: hasCaret
+                ? Theme.tableParagraph()
+                : Theme.collapsedParagraph(height: Theme.tableRuleHeight)
+        ], range: delimiter.line)
+        hide(delimiter.element, element: delimiter.element)
+
+        // 3. Les mesures, puis les avances. Elles n'ont de sens qu'en passe
+        //    complète : le masquage est de toute façon désactivé autrement.
+        let columns = table.columnCount
+        guard collecting, columns > 0 else { return }
+
+        var widths = [CGFloat](repeating: 0, count: columns)
+        var cellWidths: [[CGFloat]] = []
+        for row in table.rows {
+            var measured: [CGFloat] = []
+            for (column, cell) in row.cells.enumerated() {
+                let width = renderedWidth(storage, cell.content, markersFrom: markerFloor)
+                measured.append(width)
+                if column < columns { widths[column] = max(widths[column], width) }
+            }
+            cellWidths.append(measured)
+        }
+
+        // La gouttière se resserre plutôt que de laisser le tableau déborder de
+        // la colonne de lecture. Passé la limite basse, on laisse déborder : une
+        // cellule trop large revient à la ligne, ce qui reste lisible.
+        var gutter = Theme.tableGutter
+        if columns > 1 {
+            let free = Theme.maxContentWidth - Theme.textInset.width - widths.reduce(0, +)
+            gutter = min(gutter, max(Theme.tableMinGutter, free / CGFloat(columns - 1)))
+        }
+
+        var starts = [CGFloat](repeating: 0, count: columns)
+        for column in 1 ..< max(columns, 1) {
+            starts[column] = starts[column - 1] + widths[column - 1] + gutter
+        }
+
+        for (index, row) in table.rows.enumerated() {
+            for (column, cell) in row.cells.enumerated() where column < columns {
+                // Le contenu se pose à gauche, au centre ou à droite de sa
+                // colonne, selon ce qu'en dit la ligne d'alignement.
+                let slack = max(0, widths[column] - cellWidths[index][column])
+                let target: CGFloat
+                switch table.alignments[column] {
+                case .leading: target = starts[column]
+                case .center: target = starts[column] + slack / 2
+                case .trailing: target = starts[column] + slack
+                }
+
+                // La barre qui ouvre la cellule porte l'avance ; celle du bord
+                // gauche n'a le plus souvent rien à rattraper et disparaît.
+                if let bar = row.bar(before: column) {
+                    if target > 0.5 {
+                        stop(bar, at: target, element: row.element)
+                    } else {
+                        hide(bar, element: row.element)
+                    }
+                }
+                // Les espaces de remplissage n'ont plus lieu d'être : c'est
+                // l'avance qui place le texte, au point près.
+                hide(NSRange(location: cell.range.location,
+                             length: cell.content.location - cell.range.location),
+                     element: row.element)
+                hide(NSRange(location: cell.content.upperBound,
+                             length: cell.range.upperBound - cell.content.upperBound),
+                     element: row.element)
+            }
+            if let trailing = row.trailingBar, row.cells.count <= columns {
+                hide(trailing, element: row.element)
+            }
+        }
+
+        tableRules.append(TableRule(
+            element: delimiter.element,
+            header: table.header.element,
+            width: starts[columns - 1] + widths[columns - 1]
+        ))
+    }
+
+    /// Largeur qu'occupera réellement une cellule à l'écran : son texte stylé,
+    /// privé des marqueurs que l'affichage masquera. La mesure ignore la position
+    /// du curseur — une ligne révélée ne doit pas faire bouger tout le tableau.
+    private func renderedWidth(
+        _ storage: NSTextStorage,
+        _ range: NSRange,
+        markersFrom floor: Int
+    ) -> CGFloat {
+        guard range.length > 0 else { return 0 }
+        let text = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: range))
+        // De la fin vers le début : retirer un marqueur ne doit pas décaler les
+        // positions de ceux qui restent à retirer.
+        let markers = hiddenMarkers[floor...]
+            .filter { NSIntersectionRange($0.marker, range).length > 0 }
+            .sorted { $0.marker.location > $1.marker.location }
+        for marker in markers {
+            let common = NSIntersectionRange(marker.marker, range)
+            text.deleteCharacters(in: NSRange(location: common.location - range.location,
+                                              length: common.length))
+        }
+        return ceil(text.size().width)
+    }
+
     // MARK: - Fragments en ligne
 
     /// `text` peut couvrir plusieurs lignes : c'est ce qui permet à une emphase
@@ -504,6 +694,12 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         } else {
             quoteBlocks.append(lineRange)
         }
+    }
+
+    /// Enregistre une barre verticale à remplacer par une avance jusqu'à `x`.
+    private func stop(_ bar: NSRange, at x: CGFloat, element: NSRange) {
+        guard collecting, bar.length == 1 else { return }
+        columnStops.append(ColumnStop(range: bar, x: x, element: element))
     }
 
     /// Enregistre un caractère à redessiner sous une autre forme.

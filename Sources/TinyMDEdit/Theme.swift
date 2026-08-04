@@ -21,6 +21,16 @@ enum Theme {
     static let quoteBarWidth: CGFloat = 3
     static let quoteIndent: CGFloat = 24
 
+    /// Tableaux. La gouttière est l'espace laissé entre deux colonnes ; elle se
+    /// resserre jusqu'à `tableMinGutter` quand le tableau menace de déborder de
+    /// la colonne de lecture.
+    static let tableGutter: CGFloat = 26
+    static let tableMinGutter: CGFloat = 10
+    /// Filet sous l'en-tête : épaisseur, et hauteur de la bande qui l'accueille
+    /// — celle de la ligne `|---|`, réduite à sa portion utile.
+    static let tableRuleWidth: CGFloat = 1
+    static let tableRuleHeight: CGFloat = 13
+
     // MARK: - Fontes
 
     static var body: NSFont {
@@ -75,6 +85,8 @@ enum Theme {
     static let accent = NSColor.controlAccentColor
     /// Barre verticale à gauche des citations.
     static let quoteBar = NSColor.quaternaryLabelColor
+    /// Filet qui sépare l'en-tête d'un tableau de son corps.
+    static let tableRule = NSColor.separatorColor
     /// Fond des blocs de code délimités par ``` — utile pour marquer l'étendue
     /// d'une zone multi-lignes. Le code *en ligne*, lui, n'a pas de fond : la
     /// fonte monospace et la couleur suffisent à le distinguer.
@@ -148,11 +160,29 @@ enum Theme {
     /// Ligne de délimitation dont le texte est masqué : réduite à une bande fine
     /// qui prolonge le fond du bloc et lui sert de marge intérieure.
     static func collapsedFenceParagraph(spacingAfter: CGFloat = 0) -> NSParagraphStyle {
+        collapsedParagraph(height: fencePadding, spacingAfter: spacingAfter)
+    }
+
+    /// Ligne entièrement masquée, réduite à une bande de la hauteur voulue.
+    static func collapsedParagraph(height: CGFloat, spacingAfter: CGFloat = 0) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.minimumLineHeight = fencePadding
-        style.maximumLineHeight = fencePadding
+        style.minimumLineHeight = height
+        style.maximumLineHeight = height
         style.paragraphSpacing = spacingAfter
         style.paragraphSpacingBefore = 0
+        return style
+    }
+
+    /// Ligne de tableau : jointive à la suivante, pour que les rangées forment
+    /// une grille et non une succession de paragraphes.
+    static func tableParagraph(
+        spacingBefore: CGFloat = 0,
+        spacingAfter: CGFloat = 0
+    ) -> NSParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineHeightMultiple = 1.3
+        style.paragraphSpacing = spacingAfter
+        style.paragraphSpacingBefore = spacingBefore
         return style
     }
 

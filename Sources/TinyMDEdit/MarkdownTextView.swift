@@ -51,6 +51,15 @@ struct MarkdownTextView: NSViewRepresentable {
             guard let coordinator, coordinator.highlighter.isStyled else { return [] }
             return coordinator.highlighter.quoteBlocks
         }
+        textView.tableRules = { [weak coordinator = context.coordinator] in
+            guard let coordinator, coordinator.highlighter.isStyled,
+                  coordinator.highlighter.markersAreComplete else { return [] }
+            // Le filet ne se trace que sous une ligne d'alignement effacée : le
+            // curseur posé dessus lui rend sa syntaxe, donc sa hauteur.
+            return coordinator.highlighter.tableRules.filter {
+                coordinator.visibility.isHidden($0.element.location)
+            }
+        }
 
         textView.delegate = context.coordinator
         textView.textStorage?.delegate = context.coordinator.highlighter
@@ -141,12 +150,13 @@ struct MarkdownTextView: NSViewRepresentable {
             let previous = visibility.selection
             let selection = textView.selectedRange()
 
-            // Entrer ou sortir d'une ligne de délimitation change sa hauteur :
+            // Entrer ou sortir d'une ligne réduite à une bande (délimitation de
+            // bloc de code, ligne d'alignement d'un tableau) change sa hauteur :
             // c'est un attribut, donc une passe de stylage complète.
-            let wasOnFence = highlighter.isOnFence(previous.location)
-            let isOnFence = highlighter.isOnFence(selection.location)
+            let wasCollapsed = highlighter.isOnCollapsedLine(previous.location)
+            let isCollapsed = highlighter.isOnCollapsedLine(selection.location)
             highlighter.caretLocation = selection.location
-            if wasOnFence != isOnFence {
+            if wasCollapsed != isCollapsed {
                 restyle()
                 return
             }
@@ -207,6 +217,7 @@ struct MarkdownTextView: NSViewRepresentable {
             visibility.update(
                 markers: highlighter.hiddenMarkers,
                 substitutions: highlighter.substitutions,
+                stops: highlighter.columnStops,
                 enabled: highlighter.isStyled && highlighter.markersAreComplete
             )
         }

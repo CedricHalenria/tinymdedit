@@ -22,6 +22,13 @@ ils sont juste affichés en gris discret. Vous pouvez taper dedans normalement.
 
 > Les citations passent en italique, décalées vers la droite.
 
+| Élément | Rendu | Version |
+|---|:---:|---:|
+| Tableaux | colonnes alignées | 1.0 |
+| Alignements | gauche, centre, droite | 1.0 |
+
+
+
 - [x] Une case à cocher
 - [x] Une case cochée
 
