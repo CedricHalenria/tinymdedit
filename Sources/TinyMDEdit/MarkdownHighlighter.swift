@@ -89,6 +89,24 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
     /// ligne d'alignement.
     private(set) var tableRules: [TableRule] = []
 
+    /// Largeur réellement offerte au texte, que la vue tient à jour. Les tableaux
+    /// sont seuls à en dépendre : c'est elle qui décide si leurs colonnes tiennent.
+    /// La valeur de départ est une estimation prudente, le temps que la vue soit
+    /// disposée.
+    private(set) var contentWidth: CGFloat = Theme.maxContentWidth - Theme.textInset.width
+
+    /// Vrai si la dernière passe complète a rencontré au moins un tableau. Sans
+    /// tableau, redimensionner la fenêtre ne change rien à la mise en page.
+    private(set) var hasTable = false
+
+    /// Enregistre la largeur offerte au texte. Renvoie `true` s'il faut restyler,
+    /// c'est-à-dire si la largeur a changé et que le document contient un tableau.
+    func setContentWidth(_ width: CGFloat) -> Bool {
+        guard width > 0, abs(width - contentWidth) > 0.5 else { return false }
+        contentWidth = width
+        return hasTable
+    }
+
     /// Caractères portant une case à cocher — celui entre les crochets d'un
     /// `[ ]` ou `[x]`. La vue s'en sert pour rendre les cases cliquables.
     private(set) var checkboxes: [NSRange] = []
@@ -173,6 +191,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         tableRules.removeAll(keepingCapacity: true)
         checkboxes.removeAll(keepingCapacity: true)
         quoteBlocks.removeAll(keepingCapacity: true)
+        hasTable = false
         collecting = isStyled
         markersAreComplete = isStyled
         rehighlight(storage, in: NSRange(location: 0, length: storage.length))
@@ -424,8 +443,25 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
 
     // MARK: - Tableaux
 
+    /// Ce que devient un tableau à l'écran.
+    ///
+    /// Les colonnes alignées supposent que le tableau tienne dans la colonne de
+    /// lecture : le texte est **un flux unique**, une cellule ne peut donc pas se
+    /// replier dans sa colonne pendant que la suivante l'attend à droite. Quand
+    /// plus rien ne tient, on renonce à la grille plutôt que de laisser les
+    /// rangées se disloquer.
+    private enum TableLayout {
+        /// Colonnes alignées, à la taille du corps de texte (`scale` valant 1) ou
+        /// à une taille réduite quand c'est le seul moyen de tenir.
+        case columns(scale: CGFloat)
+        /// Trop large même réduit : les rangées se replient comme du texte
+        /// ordinaire, et les barres deviennent de simples séparateurs.
+        case wrapped
+    }
+
     /// Style un tableau entier : en-tête en gras, rangées jointives, ligne
-    /// d'alignement réduite à un filet — et surtout, colonnes alignées.
+    /// d'alignement réduite à un filet — et, quand la place le permet, colonnes
+    /// alignées.
     ///
     /// L'alignement ne doit rien à des espaces ajoutés au fichier : on mesure la
     /// largeur réelle de chaque cellule une fois stylée, on en déduit l'abscisse
@@ -434,18 +470,14 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         // Les marqueurs relevés à partir d'ici sont ceux du tableau : eux seuls
         // comptent quand on mesure la largeur rendue d'une cellule.
         let markerFloor = hiddenMarkers.count
+        if collecting { hasTable = true }
 
-        // 1. Les rangées : fonte, géométrie, puis styles en ligne cellule par
-        //    cellule — une emphase ne traverse jamais une barre verticale.
+        // 1. Les rangées : fonte, puis styles en ligne cellule par cellule — une
+        //    emphase ne traverse jamais une barre verticale. La géométrie, elle,
+        //    attend de savoir si les colonnes tiennent.
         for (index, row) in table.rows.enumerated() {
-            let isHeader = index == 0
-            storage.addAttributes([
-                .font: isHeader ? Theme.bodyBold : Theme.body,
-                .paragraphStyle: Theme.tableParagraph(
-                    spacingBefore: isHeader ? 6 : 0,
-                    spacingAfter: row.line.upperBound >= table.end ? 12 : 0
-                )
-            ], range: row.line)
+            storage.addAttribute(.font, value: index == 0 ? Theme.bodyBold : Theme.body,
+                                 range: row.line)
             for bar in row.bars {
                 storage.addAttribute(.foregroundColor, value: Theme.marker, range: bar)
             }
@@ -469,29 +501,116 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         ], range: delimiter.line)
         hide(delimiter.element, element: delimiter.element)
 
-        // 3. Les mesures, puis les avances. Elles n'ont de sens qu'en passe
+        // 3. Les mesures, puis la mise en page. Elles n'ont de sens qu'en passe
         //    complète : le masquage est de toute façon désactivé autrement.
         let columns = table.columnCount
-        guard collecting, columns > 0 else { return }
+        guard collecting, columns > 0 else {
+            styleTableRows(storage, table, layout: .columns(scale: 1))
+            return
+        }
 
-        var widths = [CGFloat](repeating: 0, count: columns)
+        let (layout, widths, cellWidths) = fit(storage, table, markersFrom: markerFloor)
+        styleTableRows(storage, table, layout: layout)
+
+        switch layout {
+        case .columns(let scale):
+            if scale != 1 {
+                scaleFonts(storage, in: NSRange(location: table.header.line.location,
+                                                length: table.end - table.header.line.location),
+                           by: scale)
+            }
+            alignColumns(table, widths: widths, cellWidths: cellWidths)
+        case .wrapped:
+            wrapRows(table)
+        }
+    }
+
+    /// Cherche la mise en page qui tient dans la colonne de lecture : d'abord à
+    /// taille normale, puis en réduisant la fonte du tableau — et, si même le
+    /// plancher ne suffit pas, en renonçant aux colonnes.
+    ///
+    /// La largeur rendue ne suit pas *exactement* la taille de la fonte : on
+    /// remesure à chaque essai plutôt que de faire confiance à une règle de trois.
+    private func fit(
+        _ storage: NSTextStorage,
+        _ table: MarkdownTable,
+        markersFrom floor: Int
+    ) -> (layout: TableLayout, widths: [CGFloat], cellWidths: [[CGFloat]]) {
+        // Place qui reste aux colonnes une fois prises les gouttières minimales.
+        let room = contentWidth - Theme.tableMinGutter * CGFloat(table.columnCount - 1)
+        let floorScale = Theme.tableMinFontSize / Theme.bodySize
+
+        var scale: CGFloat = 1
+        var (widths, cellWidths) = measure(storage, table, markersFrom: floor, scale: scale)
+        var total = widths.reduce(0, +)
+
+        // La règle de trois vise un cheveu en deçà de la place disponible : viser
+        // la limite exacte ferait osciller la correction sans jamais passer
+        // dessous. Deux tours suffisent en pratique, la boucle s'arrête d'ailleurs
+        // dès qu'elle n'a plus rien à gagner.
+        var attempts = 0
+        while total > room, room > 0, total > 0, attempts < 4 {
+            attempts += 1
+            let next = max(floorScale, scale * (room - 1) / total)
+            guard next < scale else { break }   // au plancher : inutile d'insister
+            scale = next
+            (widths, cellWidths) = measure(storage, table, markersFrom: floor, scale: scale)
+            total = widths.reduce(0, +)
+        }
+
+        // Toujours trop large : la grille est perdue d'avance, on replie.
+        return (total <= room ? .columns(scale: scale) : .wrapped, widths, cellWidths)
+    }
+
+    /// Largeur rendue de chaque cellule, et largeur de chaque colonne — celle de
+    /// sa cellule la plus large.
+    private func measure(
+        _ storage: NSTextStorage,
+        _ table: MarkdownTable,
+        markersFrom floor: Int,
+        scale: CGFloat
+    ) -> (widths: [CGFloat], cellWidths: [[CGFloat]]) {
+        var widths = [CGFloat](repeating: 0, count: table.columnCount)
         var cellWidths: [[CGFloat]] = []
         for row in table.rows {
             var measured: [CGFloat] = []
             for (column, cell) in row.cells.enumerated() {
-                let width = renderedWidth(storage, cell.content, markersFrom: markerFloor)
+                let width = renderedWidth(storage, cell.content, markersFrom: floor, scale: scale)
                 measured.append(width)
-                if column < columns { widths[column] = max(widths[column], width) }
+                if column < widths.count { widths[column] = max(widths[column], width) }
             }
             cellWidths.append(measured)
         }
+        return (widths, cellWidths)
+    }
 
-        // La gouttière se resserre plutôt que de laisser le tableau déborder de
-        // la colonne de lecture. Passé la limite basse, on laisse déborder : une
-        // cellule trop large revient à la ligne, ce qui reste lisible.
+    /// Géométrie des rangées : jointives en colonnes, aérées et retraitées quand
+    /// le tableau est replié — une rangée y occupe alors plusieurs lignes.
+    private func styleTableRows(_ storage: NSTextStorage, _ table: MarkdownTable, layout: TableLayout) {
+        let isWrapped: Bool
+        if case .wrapped = layout { isWrapped = true } else { isWrapped = false }
+
+        for (index, row) in table.rows.enumerated() {
+            let isLast = row.line.upperBound >= table.end
+            storage.addAttribute(.paragraphStyle, value: Theme.tableParagraph(
+                spacingBefore: index == 0 ? 6 : 0,
+                spacingAfter: isLast ? 12 : (isWrapped ? 6 : 0),
+                headIndent: isWrapped ? Theme.tableWrappedIndent : 0
+            ), range: row.line)
+        }
+    }
+
+    /// Chaque barre verticale devient une avance jusqu'au début de sa colonne, et
+    /// les espaces de remplissage du fichier disparaissent : c'est l'avance qui
+    /// place le texte, au point près.
+    private func alignColumns(_ table: MarkdownTable, widths: [CGFloat], cellWidths: [[CGFloat]]) {
+        let columns = table.columnCount
+
+        // La gouttière prend ce qui reste, sans dépasser sa valeur nominale ni
+        // descendre sous le minimum — `fit` a garanti que ce minimum tient.
         var gutter = Theme.tableGutter
         if columns > 1 {
-            let free = Theme.maxContentWidth - Theme.textInset.width - widths.reduce(0, +)
+            let free = contentWidth - widths.reduce(0, +)
             gutter = min(gutter, max(Theme.tableMinGutter, free / CGFloat(columns - 1)))
         }
 
@@ -521,8 +640,6 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
                         hide(bar, element: row.element)
                     }
                 }
-                // Les espaces de remplissage n'ont plus lieu d'être : c'est
-                // l'avance qui place le texte, au point près.
                 hide(NSRange(location: cell.range.location,
                              length: cell.content.location - cell.range.location),
                      element: row.element)
@@ -536,19 +653,75 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
         }
 
         tableRules.append(TableRule(
-            element: delimiter.element,
+            element: table.delimiter.element,
             header: table.header.element,
             width: starts[columns - 1] + widths[columns - 1]
         ))
     }
 
+    /// Tableau replié. Aucune avance : la rangée se replie comme un paragraphe
+    /// ordinaire, à la taille de lecture, et ses lignes suivantes sont retirées.
+    ///
+    /// Les barres deviennent de fins séparateurs — sans elles on ne verrait plus
+    /// où une cellule finit. Celle de tête reste : elle marque le début de chaque
+    /// rangée, que le retrait détache du reste. Celle de queue s'efface, elle ne
+    /// séparerait plus rien. Le remplissage, lui, se réduit à une espace : le
+    /// texte ne doit pas se retrouver troué au milieu d'une ligne.
+    private func wrapRows(_ table: MarkdownTable) {
+        for row in table.rows {
+            for bar in (row.leadingBar.map { [$0] } ?? []) + row.innerBars {
+                substitute(bar, with: Theme.tableSeparator, element: row.element)
+            }
+            if let trailing = row.trailingBar { hide(trailing, element: row.element) }
+
+            for (column, cell) in row.cells.enumerated() {
+                // Une espace de chaque côté d'un séparateur suffit ; le reste du
+                // remplissage disparaît. En fin de rangée, la barre effacée ne
+                // laisse rien à séparer.
+                let keepBefore = row.bar(before: column) != nil ? 1 : 0
+                let keepAfter = column < row.cells.count - 1 ? 1 : 0
+                let before = cell.content.location - cell.range.location
+                let after = cell.range.upperBound - cell.content.upperBound
+                hide(NSRange(location: cell.range.location + keepBefore,
+                             length: max(0, before - keepBefore)),
+                     element: row.element)
+                hide(NSRange(location: cell.content.upperBound,
+                             length: max(0, after - keepAfter)),
+                     element: row.element)
+            }
+        }
+
+        // Le filet court sur toute la colonne de lecture : replié, le tableau n'a
+        // plus de largeur propre.
+        tableRules.append(TableRule(
+            element: table.delimiter.element,
+            header: table.header.element,
+            width: contentWidth
+        ))
+    }
+
+    /// Multiplie la taille de chaque fonte d'une plage, traits conservés : c'est
+    /// ainsi qu'un tableau trop large se réduit sans perdre ses gras ni son code.
+    private func scaleFonts(_ text: NSMutableAttributedString, in range: NSRange, by scale: CGFloat) {
+        guard scale != 1, range.length > 0 else { return }
+        text.enumerateAttribute(.font, in: range) { value, subrange, _ in
+            guard let font = value as? NSFont else { return }
+            let resized = NSFont(descriptor: font.fontDescriptor, size: font.pointSize * scale)
+            text.addAttribute(.font, value: resized ?? font, range: subrange)
+        }
+    }
+
     /// Largeur qu'occupera réellement une cellule à l'écran : son texte stylé,
     /// privé des marqueurs que l'affichage masquera. La mesure ignore la position
     /// du curseur — une ligne révélée ne doit pas faire bouger tout le tableau.
+    ///
+    /// `scale` permet de mesurer ce que donnerait le tableau réduit, sans avoir à
+    /// toucher au document pour l'essayer.
     private func renderedWidth(
         _ storage: NSTextStorage,
         _ range: NSRange,
-        markersFrom floor: Int
+        markersFrom floor: Int,
+        scale: CGFloat = 1
     ) -> CGFloat {
         guard range.length > 0 else { return 0 }
         let text = NSMutableAttributedString(attributedString: storage.attributedSubstring(from: range))
@@ -562,6 +735,7 @@ final class MarkdownHighlighter: NSObject, NSTextStorageDelegate {
             text.deleteCharacters(in: NSRange(location: common.location - range.location,
                                               length: common.length))
         }
+        scaleFonts(text, in: NSRange(location: 0, length: text.length), by: scale)
         return ceil(text.size().width)
     }
 

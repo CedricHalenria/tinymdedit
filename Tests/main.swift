@@ -342,6 +342,89 @@ check("colonne à gauche : même abscisse sur toutes les rangées",
 check("l'abscisse tient compte de la cellule la plus large",
       (alignedStops.first ?? 0) > 0)
 
+print("\nTABLEAUX TROP LARGES")
+// Un tableau qui déborde de la colonne de lecture se réduit ; s'il déborde
+// encore au plancher, il renonce aux colonnes et se replie.
+// Le curseur se pose sur la ligne « Fin. » : dans une rangée, il en révélerait
+// la syntaxe et le tableau ne serait plus celui qu'on veut observer.
+func styled(_ source: String) -> (NSTextStorage, MarkdownHighlighter, MarkerVisibilityController) {
+    let storage = NSTextStorage(string: source)
+    let highlighter = MarkdownHighlighter()
+    storage.delegate = highlighter
+    highlighter.rehighlight(storage)
+    let visibility = MarkerVisibilityController()
+    visibility.update(markers: highlighter.hiddenMarkers,
+                      substitutions: highlighter.substitutions,
+                      stops: highlighter.columnStops,
+                      enabled: highlighter.markersAreComplete)
+    visibility.setSelection(NSRange(location: (source as NSString).range(of: "Fin.").location,
+                                    length: 0))
+    return (storage, highlighter, visibility)
+}
+
+let phrase = "Une phrase déjà longue pour la place disponible"
+let snugSource = """
+| \(phrase) | \(phrase) |
+|---|---|
+| \(phrase) | \(phrase) |
+
+Fin.
+"""
+let (snug, snugHighlighter, _) = styled(snugSource)
+let snugFont = snug.attributes(at: (snugSource as NSString).range(of: phrase).location,
+                               effectiveRange: nil)[.font] as! NSFont
+check("tableau trop large : fonte réduite",
+      snugFont.pointSize < Theme.bodySize && snugFont.pointSize >= Theme.tableMinFontSize)
+check("… mais colonnes conservées", !snugHighlighter.columnStops.isEmpty)
+check("… et tableau ramené dans la colonne de lecture",
+      (snugHighlighter.tableRules.first?.width ?? .infinity) <= snugHighlighter.contentWidth)
+
+// Des cellules qui contiennent des phrases entières : aucune réduction ne les
+// fera tenir côte à côte. On replie.
+let novel = String(repeating: "Poser les 5 bios, même photo et même nom partout. ", count: 4)
+let wideSource = """
+| Jour | \(novel) | Durée |
+|---|---|---|
+| Mar 5 | \(novel) | 45 min |
+
+Fin.
+"""
+let (wide, wideHighlighter, wideVisibility) = styled(wideSource)
+let largeNs = wideSource as NSString
+func wAt(_ needle: String, _ o: Int = 0) -> Int { largeNs.range(of: needle).location + o }
+let wideParagraph = wide.attributes(at: wAt("Mar 5"),
+                                    effectiveRange: nil)[.paragraphStyle] as! NSParagraphStyle
+let wideFont = wide.attributes(at: wAt("Mar 5"), effectiveRange: nil)[.font] as! NSFont
+
+check("tableau impossible à réduire : aucune colonne", wideHighlighter.columnStops.isEmpty)
+check("… rangées repliées avec retrait", wideParagraph.headIndent == Theme.tableWrappedIndent)
+check("… à la taille de lecture", wideFont.pointSize == Theme.bodySize)
+check("… barre de tête gardée pour marquer le début de rangée",
+      wideVisibility.isSubstituted(wAt("| Mar 5")))
+check("… barre de queue effacée", wideVisibility.isHidden(wAt("45 min |", 7)))
+check("… barres intérieures gardées en séparateurs",
+      !wideVisibility.isHidden(wAt("| Durée")) && wideVisibility.isSubstituted(wAt("| Durée")))
+check("… filet d'en-tête sur toute la largeur",
+      wideHighlighter.tableRules.first?.width == wideHighlighter.contentWidth)
+
+// Une fenêtre plus étroite change la donne : le tableau qui tenait doit se
+// remettre en page.
+let narrow = MarkdownHighlighter()
+let narrowStorage = NSTextStorage(string: tableSource)
+narrowStorage.delegate = narrow
+narrow.rehighlight(narrowStorage)
+check("largeur inchangée → pas de restylage", !narrow.setContentWidth(narrow.contentWidth))
+check("largeur changée avec un tableau → restylage", narrow.setContentWidth(300))
+narrow.rehighlight(narrowStorage)
+check("… et le tableau tient dans la nouvelle largeur",
+      (narrow.tableRules.first?.width ?? .infinity) <= 300)
+
+let noTable = MarkdownHighlighter()
+let noTableStorage = NSTextStorage(string: "Juste du texte.\n")
+noTableStorage.delegate = noTable
+noTable.rehighlight(noTableStorage)
+check("largeur changée sans tableau → rien à refaire", !noTable.setContentWidth(300))
+
 // Mise en page réelle : on assemble une pile TextKit et on relit l'abscisse à
 // laquelle le texte a effectivement été posé. C'est le seul moyen de vérifier
 // que la barre verticale, devenue caractère de contrôle, avance bien jusqu'à la

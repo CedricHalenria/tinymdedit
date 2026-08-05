@@ -26,6 +26,16 @@ enum Theme {
     /// la colonne de lecture.
     static let tableGutter: CGFloat = 26
     static let tableMinGutter: CGFloat = 10
+    /// Gouttière épuisée, le tableau se réduit — mais jamais en dessous de cette
+    /// taille : passé ce seuil on ne lirait plus rien, et mieux vaut alors
+    /// renoncer aux colonnes.
+    static let tableMinFontSize: CGFloat = 11.5
+    /// Tableau replié : retrait des lignes suivantes d'une rangée, pour qu'on
+    /// voie du premier coup d'œil où chaque rangée commence.
+    static let tableWrappedIndent: CGFloat = 22
+    /// Barre verticale d'un tableau replié : elle n'aligne plus rien, elle ne
+    /// fait plus que séparer deux cellules — un filet, pas un signe.
+    static let tableSeparator: Character = "│"
     /// Filet sous l'en-tête : épaisseur, et hauteur de la bande qui l'accueille
     /// — celle de la ligne `|---|`, réduite à sa portion utile.
     static let tableRuleWidth: CGFloat = 1
@@ -177,12 +187,14 @@ enum Theme {
     /// une grille et non une succession de paragraphes.
     static func tableParagraph(
         spacingBefore: CGFloat = 0,
-        spacingAfter: CGFloat = 0
+        spacingAfter: CGFloat = 0,
+        headIndent: CGFloat = 0
     ) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineHeightMultiple = 1.3
         style.paragraphSpacing = spacingAfter
         style.paragraphSpacingBefore = spacingBefore
+        style.headIndent = headIndent
         return style
     }
 

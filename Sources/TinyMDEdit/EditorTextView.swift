@@ -24,6 +24,10 @@ final class EditorTextView: NSTextView {
     /// d'alignement.
     var tableRules: () -> [MarkdownHighlighter.TableRule] = { [] }
 
+    /// Appelé quand la largeur réellement offerte au texte change. Les tableaux
+    /// en dépendent : c'est elle qui décide si leurs colonnes tiennent.
+    var onContentWidthChange: (CGFloat) -> Void = { _ in }
+
     // MARK: - Colonne de lecture
 
     /// Centre la colonne de texte et lui impose une largeur maximale : au-delà,
@@ -37,6 +41,10 @@ final class EditorTextView: NSTextView {
         if abs(textContainerInset.width - horizontal) > 0.5 {
             textContainerInset = NSSize(width: horizontal, height: Theme.textInset.height)
         }
+        // Ce qui reste au texte, une fois les marges et le retrait de fragment
+        // retirés — l'abscisse d'une colonne de tableau se compte depuis là.
+        let padding = textContainer?.lineFragmentPadding ?? 0
+        onContentWidthChange(newSize.width - 2 * horizontal - 2 * padding)
     }
 
     // MARK: - Barre des citations et filets de tableau

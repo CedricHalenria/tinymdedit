@@ -61,6 +61,10 @@ struct MarkdownTextView: NSViewRepresentable {
             }
         }
 
+        textView.onContentWidthChange = { [weak coordinator = context.coordinator] width in
+            coordinator?.setContentWidth(width)
+        }
+
         textView.delegate = context.coordinator
         textView.textStorage?.delegate = context.coordinator.highlighter
 
@@ -165,6 +169,15 @@ struct MarkdownTextView: NSViewRepresentable {
             guard visibility.setSelection(selection) else { return }
             invalidateGlyphs(around: previous)
             invalidateGlyphs(around: selection)
+        }
+
+        /// La fenêtre a changé de largeur. Seuls les tableaux s'en soucient : eux
+        /// seuls sont mis en page en fonction de la place disponible.
+        func setContentWidth(_ width: CGFloat) {
+            guard highlighter.setContentWidth(width) else { return }
+            // On est au milieu d'un cycle de mise en page : restyler ici
+            // réentrerait dans le gestionnaire. On attend le tour suivant.
+            DispatchQueue.main.async { [weak self] in self?.restyle() }
         }
 
         /// Force une passe de stylage complète (changement de mode, texte remplacé).

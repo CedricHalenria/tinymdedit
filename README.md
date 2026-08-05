@@ -98,7 +98,7 @@ n'installe jamais rien d'elle-même — elle ouvre la page de téléchargement.
 | `[texte](url)` | libellé souligné, URL en retrait visuel |
 | `<https://…>` | lien automatique |
 | `---`, `***` | filet horizontal |
-| `\| a \| b \|` + `\|---\|` | tableau : colonnes alignées, en-tête en gras, filet sous l'en-tête |
+| `\| a \| b \|` + `\|---\|` | tableau : colonnes alignées, en-tête en gras, filet sous l'en-tête ; trop large, il se réduit puis se replie |
 
 ## Architecture
 
@@ -121,6 +121,13 @@ la largeur réellement occupée par chaque cellule est mesurée, puis chaque bar
 verticale est déclarée *caractère de contrôle* et sa largeur devient la distance qui
 reste à parcourir jusqu'à la colonne suivante. La ligne `|---|---|`, qui ne dit rien
 d'autre que l'alignement, est remplacée par un filet.
+
+Une grille suppose que le tableau tienne dans la largeur : le texte est **un flux
+unique**, une cellule ne peut pas se replier dans sa colonne pendant que la suivante
+l'attend à droite. Un tableau trop large réduit donc sa fonte, jusqu'à 11,5 pt. En
+dessous, il renonce aux colonnes : chaque rangée se replie comme un paragraphe, ses
+lignes suivantes en retrait, les barres devenues de fins séparateurs. Rien n'est
+jamais tronqué, et redimensionner la fenêtre remet le tableau en page.
 
 Le moteur est un `NSTextStorageDelegate` : à chaque frappe, il repose les attributs
 d'affichage sur les paragraphes touchés. Il ne modifie **jamais** un caractère du
